@@ -33,7 +33,7 @@ The self-healing-mlops-bot is a GitHub App that automatically detects and repair
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/self-healing-mlops-bot.git
+git clone https://github.com/danieleschmidt/self-healing-mlops-bot.git
 cd self-healing-mlops-bot
 
 # Setup environment
