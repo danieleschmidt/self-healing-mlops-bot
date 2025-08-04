@@ -1,0 +1,126 @@
+groups:
+  - name: self_healing_bot_alerts
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(bot_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors per second"
+
+      # Service down
+      - alert: ServiceDown
+        expr: up{job="self-healing-bot"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Self-healing bot service is down"
+          description: "The self-healing bot service has been down for more than 1 minute"
+
+      # High response time
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(bot_event_processing_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }} seconds"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (bot_memory_usage_bytes / bot_memory_limit_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%"
+
+      # GitHub API rate limit
+      - alert: GitHubRateLimitLow
+        expr: bot_github_api_rate_limit_remaining < 100
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GitHub API rate limit is low"
+          description: "Only {{ $value }} GitHub API requests remaining"
+
+      # Failed repairs
+      - alert: HighRepairFailureRate
+        expr: rate(bot_repairs_attempted_total{status="failed"}[10m]) / rate(bot_repairs_attempted_total[10m]) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High repair failure rate"
+          description: "{{ $value | humanizePercentage }} of repair attempts are failing"
+
+      # Database connection issues
+      - alert: DatabaseConnectionFailed
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection failed"
+          description: "Cannot connect to PostgreSQL database"
+
+      # Redis connection issues
+      - alert: RedisConnectionFailed
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis connection failed"
+          description: "Cannot connect to Redis cache"
+
+      # Queue backlog
+      - alert: HighQueueBacklog
+        expr: bot_queue_length > 50
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High queue backlog"
+          description: "Event processing queue has {{ $value }} pending items"
+
+  - name: system_alerts
+    interval: 30s
+    rules:
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}%"
+
+      # High disk usage
+      - alert: HighDiskUsage
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk usage is {{ $value }}% on {{ $labels.mountpoint }}"
+
+      # Out of memory
+      - alert: OutOfMemory
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Out of memory on {{ $labels.instance }}"
+          description: "Only {{ $value }}% memory available"
