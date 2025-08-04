@@ -595,9 +595,9 @@ class CustomMLPlatform(Plugin):
 ```bibtex
 @software{self_healing_mlops_bot,
   title = {Self-Healing MLOps Bot: Automated Pipeline Repair and Monitoring},
-  author = {Your Name},
+  author = {Daniel Schmidt},
   year = {2025},
-  url = {https://github.com/yourusername/self-healing-mlops-bot}
+  url = {https://github.com/danieleschmidt/self-healing-mlops-bot}
 }
 ```
 
