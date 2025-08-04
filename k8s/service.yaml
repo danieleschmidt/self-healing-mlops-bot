@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: self-healing-bot-api
+  namespace: self-healing-bot
+  labels:
+    app: self-healing-bot
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+  selector:
+    app: self-healing-bot
+    component: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: self-healing-bot
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  selector:
+    app: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: self-healing-bot
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  selector:
+    app: redis

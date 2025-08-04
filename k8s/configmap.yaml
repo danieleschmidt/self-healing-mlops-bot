@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: self-healing-bot-config
+  namespace: self-healing-bot
+data:
+  # Server Configuration
+  HOST: "0.0.0.0"
+  PORT: "8080"
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  
+  # Database Configuration
+  DATABASE_URL: "postgresql://bot_user:$(DATABASE_PASSWORD)@postgres:5432/self_healing_bot"
+  REDIS_URL: "redis://redis:6379/0"
+  
+  # Celery Configuration
+  CELERY_BROKER_URL: "redis://redis:6379/1"
+  CELERY_RESULT_BACKEND: "redis://redis:6379/2"
+  
+  # Monitoring Configuration
+  PROMETHEUS_PORT: "9090"
+  
+  # Rate Limiting
+  RATE_LIMIT_PER_MINUTE: "60"
+  
+  # Health Check Configuration
+  HEALTH_CHECK_INTERVAL: "300"

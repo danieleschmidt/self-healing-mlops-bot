@@ -1,0 +1,206 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: self-healing-bot
+  namespace: self-healing-bot
+  labels:
+    app: self-healing-bot
+    component: api
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: self-healing-bot
+      component: api
+  template:
+    metadata:
+      labels:
+        app: self-healing-bot
+        component: api
+    spec:
+      containers:
+      - name: self-healing-bot
+        image: ghcr.io/danieleschmidt/self-healing-mlops-bot:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: GITHUB_PRIVATE_KEY_PATH
+          value: "/app/keys/private-key.pem"
+        envFrom:
+        - configMapRef:
+            name: self-healing-bot-config
+        - secretRef:
+            name: self-healing-bot-secrets
+        volumeMounts:
+        - name: github-private-key
+          mountPath: /app/keys
+          readOnly: true
+        - name: logs
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: github-private-key
+        secret:
+          secretName: github-private-key
+          defaultMode: 0400
+      - name: logs
+        emptyDir: {}
+      securityContext:
+        fsGroup: 1000
+      restartPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  namespace: self-healing-bot
+  labels:
+    app: self-healing-bot
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: self-healing-bot
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: self-healing-bot
+        component: worker
+    spec:
+      containers:
+      - name: celery-worker
+        image: ghcr.io/danieleschmidt/self-healing-mlops-bot:latest
+        command: ["celery", "-A", "self_healing_bot.tasks", "worker", "--loglevel=info", "--concurrency=4"]
+        env:
+        - name: GITHUB_PRIVATE_KEY_PATH
+          value: "/app/keys/private-key.pem"
+        envFrom:
+        - configMapRef:
+            name: self-healing-bot-config
+        - secretRef:
+            name: self-healing-bot-secrets
+        volumeMounts:
+        - name: github-private-key
+          mountPath: /app/keys
+          readOnly: true
+        - name: logs
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: github-private-key
+        secret:
+          secretName: github-private-key
+          defaultMode: 0400
+      - name: logs
+        emptyDir: {}
+      securityContext:
+        fsGroup: 1000
+      restartPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  namespace: self-healing-bot
+  labels:
+    app: self-healing-bot
+    component: scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: self-healing-bot
+      component: scheduler
+  template:
+    metadata:
+      labels:
+        app: self-healing-bot
+        component: scheduler
+    spec:
+      containers:
+      - name: celery-beat
+        image: ghcr.io/danieleschmidt/self-healing-mlops-bot:latest
+        command: ["celery", "-A", "self_healing_bot.tasks", "beat", "--loglevel=info"]
+        envFrom:
+        - configMapRef:
+            name: self-healing-bot-config
+        - secretRef:
+            name: self-healing-bot-secrets
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "100m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: logs
+        emptyDir: {}
+      securityContext:
+        fsGroup: 1000
+      restartPolicy: Always
