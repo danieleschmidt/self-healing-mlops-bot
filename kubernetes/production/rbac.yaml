@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlops-bot
+  namespace: mlops-bot-prod
+  labels:
+    app: mlops-bot
+automountServiceAccountToken: true
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: mlops-bot-prod
+  name: mlops-bot-role
+rules:
+# Pod management for auto-scaling
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+# ConfigMap access for dynamic configuration
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+# Secret access for credentials
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+# Event creation for audit logs
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+# Service discovery
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlops-bot-rolebinding
+  namespace: mlops-bot-prod
+subjects:
+- kind: ServiceAccount
+  name: mlops-bot
+  namespace: mlops-bot-prod
+roleRef:
+  kind: Role
+  name: mlops-bot-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for metrics and health checking across namespaces
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mlops-bot-metrics-reader
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/metrics", "services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions", "apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mlops-bot-metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: mlops-bot
+  namespace: mlops-bot-prod
+roleRef:
+  kind: ClusterRole
+  name: mlops-bot-metrics-reader
+  apiGroup: rbac.authorization.k8s.io

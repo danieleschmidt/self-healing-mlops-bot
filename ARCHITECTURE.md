@@ -1,255 +1,144 @@
-# Self-Healing MLOps Bot Architecture
+# Architecture Overview
 
-## Overview
+The Self-Healing MLOps Bot is designed as a microservices-based system that automatically detects and resolves issues in ML pipelines through intelligent monitoring and automated repair actions.
 
-The Self-Healing MLOps Bot is a cloud-native, autonomous system designed to detect and repair ML pipeline failures, data drift, and performance degradation. It uses an event-driven architecture with intelligent playbooks for automated remediation.
+## 🏗️ System Architecture
 
-## System Architecture
-
-```mermaid
-graph TB
-    GH[GitHub Events] --> WH[Webhook Handler]
-    WH --> EQ[Event Queue]
-    EQ --> EP[Event Processor]
-    
-    EP --> DR[Detector Registry]
-    DR --> PF[Pipeline Failure Detector]
-    DR --> DD[Data Drift Detector]
-    DR --> MD[Model Degradation Detector]
-    
-    EP --> PR[Playbook Registry]
-    PR --> TF[Test Failure Playbook]
-    PR --> GO[GPU OOM Playbook]
-    PR --> CD[Custom Playbooks]
-    
-    EP --> GI[GitHub Integration]
-    GI --> GH
-    
-    EP --> CA[Cache Layer]
-    CA --> RD[Redis]
-    
-    EP --> DB[Database]
-    DB --> PG[PostgreSQL]
-    
-    EP --> MQ[Message Queue]
-    MQ --> CW[Celery Workers]
-    
-    EP --> MT[Metrics]
-    MT --> PR[Prometheus]
-    PR --> GR[Grafana]
-    
-    CW --> AS[Auto Scaler]
-    AS --> K8[Kubernetes HPA]
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        GitHub Integration                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Webhooks  │  API Client  │  Pull Requests  │  Issue Creation  │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+          ┌───────▼───────┐
+          │   Ingress     │
+          │   Controller  │
+          └───────┬───────┘
+                  │
+    ┌─────────────▼─────────────┐
+    │     Load Balancer         │
+    │   (NGINX/HAProxy)         │
+    └─────────────┬─────────────┘
+                  │
+    ┌─────────────▼─────────────┐
+    │    API Gateway            │
+    │  - Authentication         │
+    │  - Rate Limiting          │
+    │  - Request Routing        │
+    └─────────────┬─────────────┘
+                  │
+    ┌─────────────▼─────────────┐
+    │   Web Application         │
+    │   (FastAPI)               │
+    └─────────────┬─────────────┘
+                  │
+         ┌────────┼────────┐
+         │        │        │
+    ┌────▼───┐┌──▼───┐┌───▼────┐
+    │ Event  ││Core  ││  Web   │
+    │Process ││Logic ││  API   │
+    └────┬───┘└──┬───┘└───┬────┘
+         │       │        │
+    ┌────▼───────▼────────▼────┐
+    │    Message Queue          │
+    │    (Redis/RabbitMQ)       │
+    └────┬──────────────────┬───┘
+         │                  │
+    ┌────▼─────┐       ┌────▼─────┐
+    │  Worker  │       │  Worker  │
+    │  Nodes   │  ...  │  Nodes   │
+    └────┬─────┘       └────┬─────┘
+         │                  │
+    ┌────▼──────────────────▼─────┐
+    │      Data Layer              │
+    │  ┌─────────┐  ┌─────────┐   │
+    │  │PostgreSQL│  │  Redis  │   │
+    │  └─────────┘  └─────────┘   │
+    └──────────────────────────────┘
 ```
 
-## Core Components
+## 🔧 Core Components
 
-### 1. Event Processing Layer
+### 1. Web Application Layer
 
-**Webhook Handler (`web/app.py`)**
-- Receives GitHub webhook events
-- Validates signatures and rate limits
-- Queues events for processing
+**FastAPI Application** (`self_healing_bot/web/app.py`)
+- HTTP server for webhook handling and REST API
+- Async request processing with middleware stack
+- Authentication and authorization
+- Rate limiting and security headers
+- Health check endpoints
 
-**Event Processor (`core/bot.py`)**
-- Main orchestration engine
-- Coordinates detectors and playbooks
-- Manages execution context
+### 2. Event Processing Engine
 
-### 2. Detection Layer
+**Bot Core** (`self_healing_bot/core/bot.py`)
+- Central orchestrator for all bot operations
+- Event routing and processing pipeline
+- Context management for execution tracking
+- Integration with all subsystems
 
-**Base Detector (`detectors/base.py`)**
-- Abstract interface for all detectors
-- Standardized issue reporting format
+### 3. Detection System
 
-**Pipeline Failure Detector (`detectors/pipeline_failure.py`)**
-- Monitors CI/CD pipeline failures
-- Categorizes failure types (test, build, deployment)
-- Extracts error patterns from logs
+**Detector Registry** (`self_healing_bot/detectors/registry.py`)
+- Pluggable detector architecture
+- Event-based trigger system
+- Parallel detection execution
+- Result aggregation and prioritization
 
-**Data Drift Detector (`detectors/data_drift.py`)**
-- Statistical drift detection (KS test, PSI, JS divergence)
-- Configurable thresholds and windows
-- Adaptive monitoring based on data patterns
+**Built-in Detectors**:
+- **Pipeline Failure Detector**: CI/CD pipeline monitoring
+- **Data Drift Detector**: Statistical drift detection
+- **Model Degradation Detector**: Performance monitoring
 
-**Model Degradation Detector (`detectors/model_degradation.py`)**
-- Performance metric monitoring
-- Baseline comparison and trend analysis
-- Anomaly detection for model metrics
+### 4. Action System
 
-### 3. Remediation Layer
+**Playbook Engine** (`self_healing_bot/core/playbook.py`)
+- YAML-defined repair workflows
+- Dynamic action chaining
+- Rollback capabilities
+- Success/failure tracking
 
-**Playbook System (`core/playbook.py`)**
-- Declarative repair workflows
-- Action ordering and retry logic
-- Timeout and error handling
+### 5. Data Layer
 
-**Built-in Playbooks**
-- Test Failure Handler: Analyzes logs, fixes common errors
-- GPU OOM Handler: Reduces batch size, enables checkpointing
-- Extensible plugin system for custom playbooks
+**PostgreSQL Database**:
+- Execution history and audit trails
+- Repository configurations
+- Issue tracking and resolution status
 
-### 4. Integration Layer
+**Redis Cache/Queue**:
+- Session and response caching
+- Task queue for background processing
+- Rate limiting counters
 
-**GitHub Integration (`integrations/github.py`)**
-- GitHub App authentication (JWT + installation tokens)
-- Repository operations (file read/write, PR creation)
-- Webhook validation and processing
+## 🔄 Processing Flow
 
-### 5. Performance Layer
+### Webhook Processing Pipeline
 
-**Adaptive Caching (`performance/caching.py`)**
-- Multi-level cache (local + Redis)
-- Intelligent TTL based on access patterns
-- Cache warming and invalidation strategies
+1. **Webhook Validation**: HMAC signature verification
+2. **Rate Limiting**: Request throttling per repository
+3. **Event Parsing**: GitHub event deserialization
+4. **Context Creation**: Execution tracking and metadata
+5. **Security Scanning**: Malicious payload detection
+6. **Detector Execution**: Parallel issue detection
+7. **Playbook Selection**: Automated repair workflow selection
+8. **Action Execution**: Repair action implementation
+9. **Result Validation**: Fix effectiveness verification
+10. **Notification**: Team communication and documentation
 
-**Concurrency Management (`performance/concurrency.py`)**
-- Adaptive thread/process pools
-- Resource monitoring and scaling
-- Circuit breaker pattern for fault tolerance
+## 🏗️ Scalability Features
 
-**Auto-scaling (`performance/auto_scaling.py`)**
-- Predictive scaling based on historical patterns
-- Multi-metric scaling policies
-- Kubernetes HPA integration
+- **Horizontal Pod Autoscaling**: CPU/memory based scaling
+- **Adaptive Concurrency**: Resource-aware task scheduling
+- **Intelligent Caching**: Multi-level caching with adaptive TTL
+- **Circuit Breakers**: Fault tolerance for external services
+- **Connection Pooling**: Efficient resource utilization
 
-### 6. Observability Layer
+## 🔒 Security Architecture
 
-**Structured Logging (`monitoring/logging.py`)**
-- Contextual logging with request tracing
-- Audit trail for all bot actions
-- Performance and security event logging
+- **Multi-layer Authentication**: GitHub App + API keys
+- **Input Validation**: Comprehensive security scanning
+- **Network Security**: TLS encryption and network policies
+- **RBAC**: Role-based access control
+- **Audit Logging**: Complete security event tracking
 
-**Metrics Collection (`monitoring/metrics.py`)**
-- Prometheus metrics for all components
-- Custom metrics for business logic
-- Health checks and alerting
-
-**Health Monitoring (`monitoring/health.py`)**
-- Component health checks
-- Dependency monitoring
-- Graceful degradation strategies
-
-### 7. Security Layer
-
-**Input Validation (`security/validation.py`)**
-- Comprehensive input sanitization
-- Rate limiting and abuse prevention
-- Pattern-based security scanning
-
-**Secrets Management (`security/secrets.py`)**
-- Encryption at rest and in transit
-- Secret scanning and detection
-- Secure configuration management
-
-## Data Flow
-
-### 1. Event Ingestion
-1. GitHub sends webhook to `/webhook` endpoint
-2. Request is validated (signature, rate limits)
-3. Event is queued for asynchronous processing
-4. Background worker picks up event
-
-### 2. Issue Detection
-1. Event context is created with repository metadata
-2. Relevant detectors are selected based on event type
-3. Each detector analyzes the event for potential issues
-4. Issues are classified by type and severity
-
-### 3. Automated Remediation
-1. Applicable playbooks are identified for detected issues
-2. Playbooks execute ordered sequences of actions
-3. Actions can modify files, create PRs, trigger workflows
-4. Results are logged and metrics are updated
-
-### 4. Feedback Loop
-1. Bot monitors the effectiveness of applied fixes
-2. Success/failure rates inform future decision making
-3. Machine learning models adapt to repository patterns
-4. Continuous improvement through data-driven insights
-
-## Scalability Features
-
-### Horizontal Scaling
-- Stateless API servers behind load balancer
-- Worker pool auto-scaling based on queue depth
-- Database connection pooling and read replicas
-
-### Vertical Scaling
-- Adaptive resource allocation per component
-- Memory and CPU optimization based on workload
-- Intelligent caching to reduce compute requirements
-
-### Geographic Distribution
-- Multi-region deployment support
-- Edge caching for GitHub API responses
-- Regional webhook endpoints for reduced latency
-
-## Security Architecture
-
-### Defense in Depth
-1. **Network Security**: TLS encryption, private networking
-2. **Application Security**: Input validation, output encoding
-3. **Authentication**: GitHub App with minimal permissions
-4. **Authorization**: Repository-level access controls
-5. **Data Security**: Encryption at rest, secure key management
-
-### Compliance
-- SOC 2 Type II controls
-- GDPR data protection measures
-- Audit logging and retention policies
-- Regular security assessments
-
-## Deployment Architecture
-
-### Kubernetes Native
-- Cloud-agnostic deployment model
-- Auto-scaling and self-healing infrastructure
-- Rolling updates with zero downtime
-- Resource quotas and limits
-
-### Multi-Environment Support
-- Development, staging, production environments
-- Environment-specific configuration management
-- Automated promotion pipelines
-- Blue-green deployment strategies
-
-## Performance Characteristics
-
-### Throughput
-- **Events**: 1000+ webhooks/minute per instance
-- **Detectors**: <500ms average detection time
-- **Playbooks**: <2 minutes average execution time
-- **API**: <100ms response time for health checks
-
-### Reliability
-- **Availability**: 99.9% uptime SLA
-- **Error Rate**: <0.1% for core operations
-- **Recovery Time**: <5 minutes for component failures
-- **Data Durability**: 99.999999999% (11 9's)
-
-### Scalability Limits
-- **Repositories**: 10,000+ active repositories
-- **Concurrent Events**: 500+ simultaneous processing
-- **Storage**: Petabyte-scale data retention
-- **Geographic**: Multi-region deployment support
-
-## Future Enhancements
-
-### Machine Learning Integration
-- Predictive failure detection using historical data
-- Intelligent playbook selection based on context
-- Automated hyperparameter tuning for models
-- Reinforcement learning for optimization strategies
-
-### Extended Platform Support
-- GitLab and Bitbucket integration
-- Jenkins and CircleCI pipeline support
-- AWS, GCP, Azure cloud platform integration
-- Kubernetes operator for simplified deployment
-
-### Advanced Monitoring
-- Real-time anomaly detection
-- Predictive capacity planning
-- Cost optimization recommendations
-- Security threat detection and response
+This architecture provides enterprise-grade reliability, security, and scalability for automated MLOps pipeline healing.
