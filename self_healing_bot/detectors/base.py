@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 import logging
+from datetime import datetime
 
 from ..core.context import Context
 
@@ -57,5 +58,5 @@ class BaseDetector(ABC):
             "message": message,
             "data": data or {},
             "detector": self.__class__.__name__,
-            "timestamp": context.started_at.isoformat() if hasattr(self, 'context') else None
+            "timestamp": datetime.utcnow().isoformat()
         }

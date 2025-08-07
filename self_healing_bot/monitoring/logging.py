@@ -7,7 +7,14 @@ import structlog
 from datetime import datetime
 import json
 
-from ..core.config import config
+try:
+    from ..core.config import config
+except ImportError:
+    # Fallback configuration for when config is not available
+    class MockConfig:
+        log_level = "INFO"
+        environment = "development"
+    config = MockConfig()
 
 
 def setup_logging():
