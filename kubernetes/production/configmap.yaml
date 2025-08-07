@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlops-bot-config
+  namespace: mlops-bot-prod
+data:
+  # Application Configuration
+  HOST: "0.0.0.0"
+  PORT: "8080"
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "production"
+  
+  # Database Configuration
+  DATABASE_URL: "postgresql://bot_user:${DB_PASSWORD}@postgres-service:5432/mlops_bot_prod"
+  REDIS_URL: "redis://redis-service:6379/0"
+  
+  # Celery Configuration
+  CELERY_BROKER_URL: "redis://redis-service:6379/1"
+  CELERY_RESULT_BACKEND: "redis://redis-service:6379/2"
+  
+  # Monitoring Configuration
+  PROMETHEUS_PORT: "9090"
+  
+  # Health Check Configuration
+  HEALTH_CHECK_INTERVAL: "300"
+  
+  # Rate Limiting
+  RATE_LIMIT_PER_MINUTE: "1000"
+  
+  # Cache Configuration
+  CACHE_TTL_DEFAULT: "3600"
+  CACHE_MAX_MEMORY: "1073741824"  # 1GB
+  
+  # Auto-scaling Configuration
+  ENABLE_AUTO_SCALING: "true"
+  MAX_WORKERS: "50"
+  MIN_WORKERS: "2"
+  
+  # Security Configuration
+  MAX_FILE_SIZE: "10485760"  # 10MB
+  ALLOWED_FILE_EXTENSIONS: ".py,.yaml,.yml,.json,.md,.txt,.sh,.dockerfile"
+  
+  # Performance Configuration
+  BATCH_SIZE: "10"
+  CONCURRENT_WORKERS: "4"
+  
+  # Webhook Configuration
+  WEBHOOK_TIMEOUT: "30"
+  
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlops-bot-logging-config
+  namespace: mlops-bot-prod
+data:
+  logging.yaml: |
+    version: 1
+    disable_existing_loggers: false
+    formatters:
+      standard:
+        format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+      json:
+        format: '{"timestamp": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s", "pathname": "%(pathname)s", "lineno": %(lineno)d}'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: json
+        stream: ext://sys.stdout
+      file:
+        class: logging.handlers.RotatingFileHandler
+        formatter: json
+        filename: /var/log/mlops-bot/app.log
+        maxBytes: 10485760  # 10MB
+        backupCount: 5
+    root:
+      level: INFO
+      handlers: [console, file]
+    loggers:
+      self_healing_bot:
+        level: INFO
+        handlers: [console, file]
+        propagate: no
+      audit:
+        level: INFO
+        handlers: [console, file]
+        propagate: no
+      performance:
+        level: INFO
+        handlers: [console, file]
+        propagate: no
+      security:
+        level: WARNING
+        handlers: [console, file]
+        propagate: no

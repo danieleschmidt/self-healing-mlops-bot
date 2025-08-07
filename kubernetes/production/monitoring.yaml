@@ -1,0 +1,230 @@
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: mlops-bot-metrics
+  namespace: mlops-bot-prod
+  labels:
+    app: mlops-bot
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: mlops-bot
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    honorLabels: true
+
+---
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: redis-metrics
+  namespace: mlops-bot-prod
+  labels:
+    app: redis
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  endpoints:
+  - port: redis-metrics
+    interval: 30s
+    path: /metrics
+    honorLabels: true
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mlops-bot-alerts
+  namespace: mlops-bot-prod
+  labels:
+    app: mlops-bot
+    release: prometheus
+spec:
+  groups:
+  - name: mlops-bot.rules
+    rules:
+    # High error rate alert
+    - alert: MLOpsBotHighErrorRate
+      expr: |
+        (
+          rate(bot_errors_total[5m]) / rate(bot_events_processed_total[5m])
+        ) > 0.1
+      for: 2m
+      labels:
+        severity: warning
+        service: mlops-bot
+      annotations:
+        summary: "High error rate in MLOps Bot"
+        description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+    
+    # High response time alert
+    - alert: MLOpsBotHighLatency
+      expr: |
+        histogram_quantile(0.95, rate(bot_event_processing_duration_seconds_bucket[5m])) > 30
+      for: 5m
+      labels:
+        severity: warning
+        service: mlops-bot
+      annotations:
+        summary: "High latency in MLOps Bot"
+        description: "95th percentile latency is {{ $value }}s"
+    
+    # Pod crash alert
+    - alert: MLOpsBotPodCrashing
+      expr: |
+        rate(kube_pod_container_status_restarts_total{namespace="mlops-bot-prod", pod=~"mlops-bot-.*"}[15m]) > 0
+      for: 1m
+      labels:
+        severity: critical
+        service: mlops-bot
+      annotations:
+        summary: "MLOps Bot pod is crash looping"
+        description: "Pod {{ $labels.pod }} is restarting frequently"
+    
+    # Memory usage alert
+    - alert: MLOpsBotHighMemoryUsage
+      expr: |
+        (
+          container_memory_working_set_bytes{namespace="mlops-bot-prod", pod=~"mlops-bot-.*", container="mlops-bot"}
+          / container_spec_memory_limit_bytes{namespace="mlops-bot-prod", pod=~"mlops-bot-.*", container="mlops-bot"}
+        ) > 0.9
+      for: 5m
+      labels:
+        severity: warning
+        service: mlops-bot
+      annotations:
+        summary: "High memory usage in MLOps Bot"
+        description: "Memory usage is {{ $value | humanizePercentage }} of limit"
+    
+    # CPU usage alert
+    - alert: MLOpsBotHighCPUUsage
+      expr: |
+        (
+          rate(container_cpu_usage_seconds_total{namespace="mlops-bot-prod", pod=~"mlops-bot-.*", container="mlops-bot"}[5m])
+          / container_spec_cpu_quota{namespace="mlops-bot-prod", pod=~"mlops-bot-.*", container="mlops-bot"}
+        ) > 0.8
+      for: 10m
+      labels:
+        severity: warning
+        service: mlops-bot
+      annotations:
+        summary: "High CPU usage in MLOps Bot"
+        description: "CPU usage is {{ $value | humanizePercentage }} of limit"
+    
+    # Database connection alert
+    - alert: MLOpsBotDatabaseDown
+      expr: |
+        bot_database_health{status="unhealthy"} == 1
+      for: 1m
+      labels:
+        severity: critical
+        service: mlops-bot
+      annotations:
+        summary: "MLOps Bot cannot connect to database"
+        description: "Database health check is failing"
+    
+    # Redis connection alert
+    - alert: MLOpsBotRedisDown
+      expr: |
+        bot_redis_health{status="unhealthy"} == 1
+      for: 1m
+      labels:
+        severity: critical
+        service: mlops-bot
+      annotations:
+        summary: "MLOps Bot cannot connect to Redis"
+        description: "Redis health check is failing"
+    
+    # GitHub API rate limit alert
+    - alert: MLOpsBotGitHubRateLimit
+      expr: |
+        bot_github_api_rate_limit_remaining < 100
+      for: 1m
+      labels:
+        severity: warning
+        service: mlops-bot
+      annotations:
+        summary: "GitHub API rate limit running low"
+        description: "Only {{ $value }} GitHub API requests remaining"
+    
+    # Webhook processing backlog alert
+    - alert: MLOpsBotWebhookBacklog
+      expr: |
+        bot_active_executions > 50
+      for: 5m
+      labels:
+        severity: warning
+        service: mlops-bot
+      annotations:
+        summary: "High webhook processing backlog"
+        description: "{{ $value }} webhooks are currently being processed"
+
+---
+# Grafana Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlops-bot-dashboard
+  namespace: mlops-bot-prod
+  labels:
+    grafana_dashboard: "1"
+data:
+  mlops-bot-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "MLOps Self-Healing Bot",
+        "tags": ["mlops", "bot", "monitoring"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Event Processing Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(bot_events_processed_total[5m])",
+                "legendFormat": "Events/sec"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Error Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(bot_errors_total[5m]) / rate(bot_events_processed_total[5m])",
+                "legendFormat": "Error Rate"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Response Time",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(bot_event_processing_duration_seconds_bucket[5m]))",
+                "legendFormat": "95th percentile"
+              },
+              {
+                "expr": "histogram_quantile(0.50, rate(bot_event_processing_duration_seconds_bucket[5m]))",
+                "legendFormat": "50th percentile"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+          }
+        ],
+        "time": {"from": "now-1h", "to": "now"},
+        "refresh": "5s"
+      }
+    }
