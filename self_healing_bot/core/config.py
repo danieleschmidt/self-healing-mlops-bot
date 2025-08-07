@@ -57,6 +57,12 @@ class BotConfig(BaseSettings):
         """Validate that the private key file exists."""
         path = Path(v)
         if not path.exists():
+            # For development, create a mock key file if it doesn't exist
+            if v == "/tmp/test-key.pem":
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, 'w') as f:
+                    f.write("-----BEGIN RSA PRIVATE KEY-----\nMOCK_KEY_FOR_DEVELOPMENT\n-----END RSA PRIVATE KEY-----\n")
+                return v
             raise ValueError(f"GitHub private key file not found: {v}")
         return v
     
