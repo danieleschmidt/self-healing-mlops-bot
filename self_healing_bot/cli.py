@@ -2,12 +2,17 @@
 
 import asyncio
 import click
+import json
 import logging
 import sys
+import uuid
+from datetime import datetime
 from pathlib import Path
+from typing import Dict, Any
 
 from .core.config import config
 from .core.bot import SelfHealingBot
+from .core.context import Context
 from .web.app import app
 
 
@@ -25,26 +30,41 @@ def setup_logging(level: str = "INFO"):
 
 @click.group()
 @click.option("--log-level", default="INFO", help="Logging level")
-def cli(log_level):
+@click.option("--debug", is_flag=True, help="Enable debug mode")
+def cli(log_level, debug):
     """Self-Healing MLOps Bot CLI."""
+    if debug:
+        config.debug = True
+        log_level = "DEBUG"
+    
     setup_logging(log_level)
+    
+    if debug:
+        click.echo("🐛 Debug mode enabled")
 
 
 @cli.command()
-@click.option("--host", default="0.0.0.0", help="Host to bind to")
-@click.option("--port", default=8080, help="Port to bind to")
+@click.option("--host", default=None, help="Host to bind to")
+@click.option("--port", default=None, type=int, help="Port to bind to")
 @click.option("--reload", is_flag=True, help="Enable auto-reload")
 def server(host, port, reload):
     """Start the bot server."""
     import uvicorn
     
-    click.echo(f"Starting Self-Healing MLOps Bot server on {host}:{port}")
+    # Use config defaults if not specified
+    final_host = host or config.host
+    final_port = port or config.port
+    
+    click.echo(f"🚀 Starting Self-Healing MLOps Bot server")
+    click.echo(f"📡 Server: {final_host}:{final_port}")
+    click.echo(f"🔧 Debug: {config.debug}")
+    click.echo(f"🔄 Reload: {reload or config.debug}")
     
     uvicorn.run(
         "self_healing_bot.web.app:app",
-        host=host,
-        port=port,
-        reload=reload,
+        host=final_host,
+        port=final_port,
+        reload=reload or config.debug,
         log_level=config.log_level.lower()
     )
 
