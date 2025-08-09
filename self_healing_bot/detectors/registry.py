@@ -50,8 +50,16 @@ class DetectorRegistry:
         from .pipeline_failure import PipelineFailureDetector
         from .data_drift import DataDriftDetector
         from .model_degradation import ModelDegradationDetector
+        from .resource_constraint import ResourceConstraintDetector
+        from .security_vulnerability import SecurityVulnerabilityDetector
+        from .dependency_conflict import DependencyConflictDetector
+        from .infrastructure_health import InfrastructureHealthDetector
         
         # Register built-in detectors
         self.register_detector("pipeline_failure", PipelineFailureDetector())
         self.register_detector("data_drift", DataDriftDetector())
         self.register_detector("model_degradation", ModelDegradationDetector())
+        self.register_detector("resource_constraint", ResourceConstraintDetector())
+        self.register_detector("security_vulnerability", SecurityVulnerabilityDetector())
+        self.register_detector("dependency_conflict", DependencyConflictDetector())
+        self.register_detector("infrastructure_health", InfrastructureHealthDetector())

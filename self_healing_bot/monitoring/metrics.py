@@ -82,6 +82,56 @@ class BotMetrics:
             ['error_type', 'component'],
             registry=self.registry
         )
+        
+        # Web API metrics
+        self.webhook_requests_total = Counter(
+            'bot_webhook_requests_total',
+            'Total webhook requests received',
+            ['event_type', 'status'],
+            registry=self.registry
+        )
+        
+        self.webhook_events_processed = Counter(
+            'bot_webhook_events_processed_total',
+            'Total webhook events processed',
+            ['event_type', 'status'],
+            registry=self.registry
+        )
+        
+        self.http_requests_total = Counter(
+            'bot_http_requests_total',
+            'Total HTTP requests',
+            ['method', 'path', 'status_code'],
+            registry=self.registry
+        )
+        
+        self.http_errors_total = Counter(
+            'bot_http_errors_total',
+            'Total HTTP errors',
+            ['method', 'status_code'],
+            registry=self.registry
+        )
+        
+        self.request_duration = Histogram(
+            'bot_http_request_duration_seconds',
+            'HTTP request duration',
+            ['method', 'path'],
+            registry=self.registry
+        )
+        
+        self.rate_limit_hits = Counter(
+            'bot_rate_limit_hits_total',
+            'Rate limit violations',
+            ['client_type', 'endpoint'],
+            registry=self.registry
+        )
+        
+        self.security_violations = Counter(
+            'bot_security_violations_total',
+            'Security violations detected',
+            ['violation_type', 'severity'],
+            registry=self.registry
+        )
     
     def record_event_processed(self, event_type: str, repo: str, status: str, duration: float):
         """Record event processing metrics."""
@@ -139,13 +189,64 @@ class BotMetrics:
             component=component
         ).inc()
     
+    def record_webhook_request(self, event_type: str, status: str):
+        """Record webhook request."""
+        self.webhook_requests_total.labels(
+            event_type=event_type,
+            status=status
+        ).inc()
+    
+    def record_webhook_event_processed(self, event_type: str, status: str):
+        """Record webhook event processing."""
+        self.webhook_events_processed.labels(
+            event_type=event_type,
+            status=status
+        ).inc()
+    
+    def record_http_request(self, method: str, path: str, status_code: int, duration: float):
+        """Record HTTP request."""
+        self.http_requests_total.labels(
+            method=method,
+            path=path,
+            status_code=status_code
+        ).inc()
+        
+        self.request_duration.labels(
+            method=method,
+            path=path
+        ).observe(duration)
+    
+    def record_http_error(self, method: str, status_code: int):
+        """Record HTTP error."""
+        self.http_errors_total.labels(
+            method=method,
+            status_code=status_code
+        ).inc()
+    
+    def record_rate_limit_hit(self, client_type: str, endpoint: str):
+        """Record rate limit violation."""
+        self.rate_limit_hits.labels(
+            client_type=client_type,
+            endpoint=endpoint
+        ).inc()
+    
+    def record_security_violation(self, violation_type: str, severity: str):
+        """Record security violation."""
+        self.security_violations.labels(
+            violation_type=violation_type,
+            severity=severity
+        ).inc()
+    
     def get_metrics(self) -> bytes:
         """Get metrics in Prometheus format."""
         return generate_latest(self.registry)
 
 
 # Global metrics instance
-metrics = BotMetrics()
+prometheus_metrics = BotMetrics()
+
+# Backward compatibility alias
+metrics = prometheus_metrics
 
 
 class MetricsMiddleware:

@@ -46,27 +46,33 @@ def cli(log_level, debug):
 @cli.command()
 @click.option("--host", default=None, help="Host to bind to")
 @click.option("--port", default=None, type=int, help="Port to bind to")
-@click.option("--reload", is_flag=True, help="Enable auto-reload")
-def server(host, port, reload):
-    """Start the bot server."""
-    import uvicorn
+@click.option("--reload", is_flag=True, help="Enable auto-reload for development")
+@click.option("--production", is_flag=True, help="Run in production mode with Gunicorn")
+def server(host, port, reload, production):
+    """Start the bot server with production-ready configuration."""
+    from .server import run_server, run_production_server
     
-    # Use config defaults if not specified
-    final_host = host or config.host
-    final_port = port or config.port
+    # Override config if specified
+    if host:
+        config.host = host
+    if port:
+        config.port = port
+    if reload:
+        config.debug = True
     
     click.echo(f"🚀 Starting Self-Healing MLOps Bot server")
-    click.echo(f"📡 Server: {final_host}:{final_port}")
+    click.echo(f"📡 Server: {config.host}:{config.port}")
+    click.echo(f"🌍 Environment: {config.environment}")
     click.echo(f"🔧 Debug: {config.debug}")
-    click.echo(f"🔄 Reload: {reload or config.debug}")
+    click.echo(f"🔄 Reload: {reload}")
+    click.echo(f"🏭 Production mode: {production}")
     
-    uvicorn.run(
-        "self_healing_bot.web.app:app",
-        host=final_host,
-        port=final_port,
-        reload=reload or config.debug,
-        log_level=config.log_level.lower()
-    )
+    if production or config.environment == "production":
+        click.echo("Starting production server with enhanced features...")
+        run_production_server()
+    else:
+        click.echo("Starting development server...")
+        run_server()
 
 
 @cli.command()
