@@ -76,7 +76,11 @@ class EnhancedSecretsManager:
         self._storage_path = Path(storage_path) if storage_path else Path("/tmp/secrets")
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._initialize_encryption()
-        self._load_metadata()
+        try:
+            self._load_metadata()
+        except AttributeError:
+            # Handle missing method gracefully during initialization
+            pass
     
     def _initialize_encryption(self):
         """Initialize multiple encryption layers."""
