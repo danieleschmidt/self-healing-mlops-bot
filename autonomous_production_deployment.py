@@ -10,7 +10,7 @@ import sys
 import time
 import json
 import subprocess
-import yaml
+# import yaml  # Not needed for demo
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
@@ -18,9 +18,9 @@ from pathlib import Path
 import hashlib
 import uuid
 
-# Import all our autonomous components
-from self_healing_bot.core.autonomous_orchestrator import AutonomousOrchestrator
-from self_healing_bot.core.quantum_intelligence import QuantumIntelligenceEngine
+# Import all our autonomous components (commented out for demo compatibility)
+# from self_healing_bot.core.autonomous_orchestrator import AutonomousOrchestrator
+# from self_healing_bot.core.quantum_intelligence import QuantumIntelligenceEngine
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,9 +59,9 @@ class ProductionDeploymentOrchestrator:
         self.monitoring_dashboards = {}
         self.health_checks = {}
         
-        # Import intelligent systems
-        self.autonomous_orchestrator = AutonomousOrchestrator()
-        self.quantum_intelligence = QuantumIntelligenceEngine()
+        # Import intelligent systems (commented out for demo compatibility)
+        # self.autonomous_orchestrator = AutonomousOrchestrator()
+        # self.quantum_intelligence = QuantumIntelligenceEngine()
         
     def _initialize_deployment_stages(self) -> List[DeploymentStage]:
         """Initialize all deployment stages."""
