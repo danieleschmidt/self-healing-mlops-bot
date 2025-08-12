@@ -1,0 +1,262 @@
+{
+  "deployment_summary": {
+    "deployment_id": "3283f291-f844-44d6-ad44-7e331f90ea05",
+    "started_at": "2025-08-12 16:04:50.664852",
+    "stages": [
+      {
+        "stage_name": "pre_deployment_validation",
+        "success": true,
+        "duration": 0.5018448829650879,
+        "metrics": {
+          "dependencies_checked": 25,
+          "configurations_validated": 12,
+          "secrets_verified": 8,
+          "environment_score": 0.95
+        },
+        "validation_results": {
+          "all_criteria_met": true,
+          "passed_criteria": [
+            "environment_ready",
+            "dependencies_available",
+            "configurations_valid",
+            "secrets_accessible"
+          ],
+          "failed_criteria": [],
+          "validation_score": 1.0
+        },
+        "error_message": null,
+        "timestamp": "2025-08-12 16:04:51.166995"
+      },
+      {
+        "stage_name": "infrastructure_provisioning",
+        "success": true,
+        "duration": 0.5020937919616699,
+        "metrics": {
+          "compute_instances": 4,
+          "storage_gb": 500,
+          "network_endpoints": 6,
+          "provisioning_time": 118.602
+        },
+        "validation_results": {
+          "all_criteria_met": true,
+          "passed_criteria": [
+            "compute_resources",
+            "network_connectivity",
+            "storage_mounted",
+            "load_balancer_ready"
+          ],
+          "failed_criteria": [],
+          "validation_score": 1.0
+        },
+        "error_message": null,
+        "timestamp": "2025-08-12 16:04:51.669532"
+      },
+      {
+        "stage_name": "database_migration",
+        "success": true,
+        "duration": 0.5016868114471436,
+        "metrics": {
+          "schema_migrations": 15,
+          "data_rows_migrated": 1000000,
+          "migration_time": 65.082,
+          "integrity_checks_passed": 47
+        },
+        "validation_results": {
+          "all_criteria_met": true,
+          "passed_criteria": [
+            "schema_version",
+            "data_integrity",
+            "connection_pool"
+          ],
+          "failed_criteria": [],
+          "validation_score": 1.0
+        },
+        "error_message": null,
+        "timestamp": "2025-08-12 16:04:52.171613"
+      },
+      {
+        "stage_name": "application_deployment",
+        "success": true,
+        "duration": 0.5048222541809082,
+        "metrics": {
+          "containers_deployed": 8,
+          "services_started": 12,
+          "health_checks_passed": 8,
+          "deployment_size_mb": 245
+        },
+        "validation_results": {
+          "all_criteria_met": true,
+          "passed_criteria": [
+            "services_running",
+            "health_checks_passing",
+            "api_endpoints_responsive"
+          ],
+          "failed_criteria": [],
+          "validation_score": 1.0
+        },
+        "error_message": null,
+        "timestamp": "2025-08-12 16:04:52.676873"
+      },
+      {
+        "stage_name": "configuration_deployment",
+        "success": true,
+        "duration": 0.31875133514404297,
+        "metrics": {
+          "config_files_deployed": 18,
+          "feature_flags_set": 25,
+          "environment_variables": 45
+        },
+        "validation_results": {
+          "all_criteria_met": true,
+          "passed_criteria": [
+            "configs_loaded",
+            "feature_flags_active",
+            "environment_variables_set"
+          ],
+          "failed_criteria": [],
+          "validation_score": 1.0
+        },
+        "error_message": null,
+        "timestamp": "2025-08-12 16:04:52.995978"
+      },
+      {
+        "stage_name": "monitoring_setup",
+        "success": true,
+        "duration": 0.5003714561462402,
+        "metrics": {
+          "metrics_configured": 150,
+          "alerts_created": 35,
+          "dashboards_deployed": 8,
+          "log_sources_connected": 12
+        },
+        "validation_results": {
+          "all_criteria_met": true,
+          "passed_criteria": [
+            "metrics_collecting",
+            "alerts_configured",
+            "dashboards_available",
+            "log_aggregation_active"
+          ],
+          "failed_criteria": [],
+          "validation_score": 1.0
+        },
+        "error_message": null,
+        "timestamp": "2025-08-12 16:04:53.496821"
+      },
+      {
+        "stage_name": "smoke_testing",
+        "success": true,
+        "duration": 0.5027568340301514,
+        "metrics": {
+          "api_tests_executed": 45,
+          "integration_tests_executed": 22,
+          "performance_tests_executed": 8,
+          "test_success_rate": 0.98
+        },
+        "validation_results": {
+          "all_criteria_met": true,
+          "passed_criteria": [
+            "api_tests_passing",
+            "integration_tests_passing",
+            "performance_baseline_met"
+          ],
+          "failed_criteria": [],
+          "validation_score": 1.0
+        },
+        "error_message": null,
+        "timestamp": "2025-08-12 16:04:54.001316"
+      },
+      {
+        "stage_name": "traffic_routing",
+        "success": true,
+        "duration": 0.2765629291534424,
+        "metrics": {
+          "load_balancer_rules": 12,
+          "ssl_certificates": 3,
+          "dns_records_updated": 8,
+          "traffic_split_configured": true
+        },
+        "validation_results": {
+          "all_criteria_met": true,
+          "passed_criteria": [
+            "traffic_routing_active",
+            "load_balancer_healthy",
+            "ssl_certificates_valid"
+          ],
+          "failed_criteria": [],
+          "validation_score": 1.0
+        },
+        "error_message": null,
+        "timestamp": "2025-08-12 16:04:54.278481"
+      },
+      {
+        "stage_name": "production_validation",
+        "success": false,
+        "duration": 0.5033838748931885,
+        "metrics": {
+          "functional_tests_passed": 125,
+          "performance_benchmarks_met": 8,
+          "security_scans_passed": 15,
+          "compliance_checks_passed": 28
+        },
+        "validation_results": {
+          "all_criteria_met": false,
+          "passed_criteria": [
+            "compliance_requirements_met"
+          ],
+          "failed_criteria": [
+            "full_system_functional",
+            "performance_targets_met",
+            "security_posture_validated"
+          ],
+          "validation_score": 0.25,
+          "error_message": "Failed criteria: full_system_functional, performance_targets_met, security_posture_validated"
+        },
+        "error_message": "Failed criteria: full_system_functional, performance_targets_met, security_posture_validated",
+        "timestamp": "2025-08-12 16:04:54.782220"
+      }
+    ],
+    "overall_success": false,
+    "total_duration": 4.420923948287964,
+    "rollback_performed": true,
+    "final_status": "failed",
+    "rollback_details": {
+      "rollback_executed": true,
+      "rollback_strategy": "emergency_rollback",
+      "rollback_success": true,
+      "rollback_duration": 0.30281949043273926,
+      "actions_taken": [
+        "Initiating full system rollback",
+        "Restoring previous application version",
+        "Reverting database changes",
+        "Updating traffic routing to previous version",
+        "Notifying stakeholders of rollback"
+      ]
+    },
+    "success_rate": 0.8,
+    "completed_at": "2025-08-12 16:04:55.085780"
+  },
+  "performance_metrics": {
+    "success_rate": 0.8888888888888888,
+    "total_duration": 4.420923948287964,
+    "average_stage_duration": 0.4569193522135417,
+    "fastest_stage": "traffic_routing",
+    "slowest_stage": "application_deployment",
+    "rollback_required": true
+  },
+  "recommendations": [
+    "Investigate root cause of deployment failure",
+    "Update deployment procedures to prevent similar issues",
+    "Consider additional pre-deployment validation",
+    "Review rollback procedures and improve automation",
+    "Analyze what triggered the rollback requirement"
+  ],
+  "next_steps": [
+    "Analyze deployment failure logs",
+    "Address root cause of failure",
+    "Update deployment procedures",
+    "Plan retry deployment strategy",
+    "Communicate status to stakeholders"
+  ],
+  "generated_at": "2025-08-12T16:04:55.085858"
+}
