@@ -1,0 +1,124 @@
+{
+  "sdlc_cycle_id": "sdlc_20250813_233911_1",
+  "started_at": "2025-08-13 23:39:11.484722",
+  "deployment_results": {
+    "deployment_id": "deploy_20250813_233911_2087",
+    "started_at": "2025-08-13 23:39:11.637054",
+    "environment_results": {
+      "prod-us-east": {
+        "environment_id": "prod-us-east",
+        "success": true,
+        "steps_completed": [
+          {
+            "step": "Validating environment readiness",
+            "duration_seconds": 39.78836258741475,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying database migrations",
+            "duration_seconds": 16.01692983902398,
+            "status": "completed"
+          },
+          {
+            "step": "Updating application containers",
+            "duration_seconds": 35.891704593752586,
+            "status": "completed"
+          },
+          {
+            "step": "Updating configuration",
+            "duration_seconds": 23.265541025366403,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 26.0325481003006,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 52.68278512583761,
+            "status": "completed"
+          },
+          {
+            "step": "Verifying deployment",
+            "duration_seconds": 39.96662365045309,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.14313983917236328,
+        "health_check_passed": true,
+        "performance_validated": true,
+        "health_score": 0.9575416290663288,
+        "performance_score": 0.9492556130477706,
+        "response_time_p95": 193.57096208633698,
+        "error_rate": 0.06270939101281138
+      },
+      "prod-eu-west": {
+        "environment_id": "prod-eu-west",
+        "success": true,
+        "steps_completed": [
+          {
+            "step": "Validating environment readiness",
+            "duration_seconds": 42.48943232942737,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying database migrations",
+            "duration_seconds": 43.883661030156134,
+            "status": "completed"
+          },
+          {
+            "step": "Updating application containers",
+            "duration_seconds": 24.851913745445437,
+            "status": "completed"
+          },
+          {
+            "step": "Updating configuration",
+            "duration_seconds": 53.20202893034236,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 37.17665378839082,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 49.89649583245501,
+            "status": "completed"
+          },
+          {
+            "step": "Verifying deployment",
+            "duration_seconds": 21.169919140491185,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.1431899070739746,
+        "health_check_passed": false,
+        "performance_validated": true,
+        "health_score": 0.8682582440967319,
+        "performance_score": 0.8976137535006347,
+        "response_time_p95": 149.31793470927818,
+        "error_rate": 0.08179615325539566
+      },
+      "prod-ap-southeast": {
+        "environment_id": "prod-ap-southeast",
+        "success": false,
+        "steps_completed": [],
+        "deployment_time_seconds": 0.02045726776123047,
+        "health_check_passed": true,
+        "performance_validated": true,
+        "error": "Failed at step: Validating environment readiness",
+        "rollback_required": true
+      }
+    },
+    "overall_success": false,
+    "rollback_available": true,
+    "completed_at": "2025-08-13 23:39:12.045626",
+    "total_duration_seconds": 0.408572
+  },
+  "learning_results": {},
+  "evolution_results": {},
+  "overall_success": false,
+  "next_cycle_recommendations": []
+}

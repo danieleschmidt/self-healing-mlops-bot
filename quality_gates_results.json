@@ -1,0 +1,267 @@
+{
+  "security_scan": {
+    "sast": {
+      "scan_id": "dd37236d",
+      "scan_type": "static",
+      "vulnerabilities_found": 33,
+      "critical_vulnerabilities": 1,
+      "high_vulnerabilities": 5,
+      "medium_vulnerabilities": 2,
+      "low_vulnerabilities": 25,
+      "security_score": 0.0,
+      "compliance_status": "non_compliant",
+      "scan_duration_seconds": 77.52077886084743,
+      "recommendations": [
+        "Immediately fix critical SQL injection vulnerabilities",
+        "Address high-severity input validation issues"
+      ],
+      "timestamp": "2025-08-13 23:33:32.605162"
+    },
+    "dast": {
+      "scan_id": "ccedbe1d",
+      "scan_type": "dynamic",
+      "vulnerabilities_found": 17,
+      "critical_vulnerabilities": 1,
+      "high_vulnerabilities": 2,
+      "medium_vulnerabilities": 8,
+      "low_vulnerabilities": 6,
+      "security_score": 0.0,
+      "compliance_status": "non_compliant",
+      "scan_duration_seconds": 193.61830830195623,
+      "recommendations": [
+        "Fix critical authentication bypass vulnerability"
+      ],
+      "timestamp": "2025-08-13 23:33:32.705982"
+    },
+    "dependency": {
+      "scan_id": "14a90112",
+      "scan_type": "dependency",
+      "vulnerabilities_found": 5,
+      "critical_vulnerabilities": 0,
+      "high_vulnerabilities": 2,
+      "medium_vulnerabilities": 2,
+      "low_vulnerabilities": 1,
+      "security_score": 0.17999999999999994,
+      "compliance_status": "non_compliant",
+      "scan_duration_seconds": 21.869367148606077,
+      "recommendations": [
+        "Update vulnerable packages: pytest, pydantic"
+      ],
+      "timestamp": "2025-08-13 23:33:32.806997"
+    },
+    "infrastructure": {
+      "scan_id": "bea031bf",
+      "scan_type": "infrastructure",
+      "vulnerabilities_found": 4,
+      "critical_vulnerabilities": 0,
+      "high_vulnerabilities": 1,
+      "medium_vulnerabilities": 0,
+      "low_vulnerabilities": 3,
+      "security_score": 0.6,
+      "compliance_status": "non_compliant",
+      "scan_duration_seconds": 140.77851454092405,
+      "recommendations": [
+        "Implement network segmentation and firewall rules"
+      ],
+      "timestamp": "2025-08-13 23:33:32.907871"
+    },
+    "container": {
+      "scan_id": "d7286b11",
+      "scan_type": "container",
+      "vulnerabilities_found": 10,
+      "critical_vulnerabilities": 0,
+      "high_vulnerabilities": 2,
+      "medium_vulnerabilities": 5,
+      "low_vulnerabilities": 3,
+      "security_score": 0.1399999999999999,
+      "compliance_status": "non_compliant",
+      "scan_duration_seconds": 41.20742071132751,
+      "recommendations": [
+        "Update base container image to latest secure version"
+      ],
+      "timestamp": "2025-08-13 23:33:33.008745"
+    },
+    "secrets": {
+      "scan_id": "03f31029",
+      "scan_type": "secrets",
+      "vulnerabilities_found": 1,
+      "critical_vulnerabilities": 1,
+      "high_vulnerabilities": 0,
+      "medium_vulnerabilities": 0,
+      "low_vulnerabilities": 0,
+      "security_score": 0.0,
+      "compliance_status": "non_compliant",
+      "scan_duration_seconds": 22.07352189339712,
+      "recommendations": [
+        "Remove hardcoded secrets and use environment variables or secret management",
+        "Rotate any exposed credentials immediately"
+      ],
+      "timestamp": "2025-08-13 23:33:33.109524"
+    }
+  },
+  "performance_benchmarks": {
+    "load_test": {
+      "benchmark_id": "a5f6f83b",
+      "benchmark_name": "Load Testing",
+      "metric_name": "response_time_ms",
+      "baseline_value": 200.0,
+      "current_value": 237.9875221175662,
+      "improvement_percent": -18.993761058783093,
+      "statistical_significance": 0.03637990825214794,
+      "performance_grade": "D",
+      "threshold_met": false,
+      "execution_time_ms": 200.64210891723633,
+      "timestamp": "2025-08-13 23:33:33.310820"
+    },
+    "memory": {
+      "benchmark_id": "13ed7215",
+      "benchmark_name": "Memory Usage",
+      "metric_name": "memory_usage_mb",
+      "baseline_value": 500.0,
+      "current_value": 389.0071544862876,
+      "improvement_percent": 22.19856910274248,
+      "statistical_significance": 0.018746248792197315,
+      "performance_grade": "A",
+      "threshold_met": true,
+      "execution_time_ms": 100.51918029785156,
+      "timestamp": "2025-08-13 23:33:33.411749"
+    },
+    "cpu": {
+      "benchmark_id": "e9999ada",
+      "benchmark_name": "CPU Utilization",
+      "metric_name": "cpu_utilization_percent",
+      "baseline_value": 70.0,
+      "current_value": 54.05119247398041,
+      "improvement_percent": 22.78401075145656,
+      "statistical_significance": 0.047307720229606186,
+      "performance_grade": "A",
+      "threshold_met": true,
+      "execution_time_ms": 100.43048858642578,
+      "timestamp": "2025-08-13 23:33:33.512476"
+    },
+    "io": {
+      "benchmark_id": "7b36c375",
+      "benchmark_name": "I/O Performance",
+      "metric_name": "iops",
+      "baseline_value": 5000.0,
+      "current_value": 6548.79866677371,
+      "improvement_percent": 30.975973335474187,
+      "statistical_significance": 0.03242285886928348,
+      "performance_grade": "A",
+      "threshold_met": true,
+      "execution_time_ms": 100.4326343536377,
+      "timestamp": "2025-08-13 23:33:33.613274"
+    },
+    "startup": {
+      "benchmark_id": "71fd9c38",
+      "benchmark_name": "Startup Time",
+      "metric_name": "startup_time_seconds",
+      "baseline_value": 30.0,
+      "current_value": 32.078597478517466,
+      "improvement_percent": -6.928658261724887,
+      "statistical_significance": 0.025346167417110634,
+      "performance_grade": "C",
+      "threshold_met": false,
+      "execution_time_ms": 100.46148300170898,
+      "timestamp": "2025-08-13 23:33:33.714043"
+    },
+    "scalability": {
+      "benchmark_id": "c770962e",
+      "benchmark_name": "Scalability Score",
+      "metric_name": "scalability_score",
+      "baseline_value": 100.0,
+      "current_value": 90.56467029626488,
+      "improvement_percent": -9.435329703735121,
+      "statistical_significance": 0.02205256525345671,
+      "performance_grade": "D",
+      "threshold_met": false,
+      "execution_time_ms": 200.5481719970703,
+      "timestamp": "2025-08-13 23:33:33.914884"
+    }
+  },
+  "test_coverage": {
+    "report_id": "d6f1be62",
+    "total_lines": 26837,
+    "covered_lines": 23019,
+    "coverage_percentage": 85.77533043961583,
+    "branch_coverage_percentage": 75.72425890520523,
+    "function_coverage_percentage": 88.64023292595931,
+    "uncovered_files": [
+      "health_monitor.py",
+      "autonomous_quality_validation.py",
+      "self_improving_system.py"
+    ],
+    "critical_paths_covered": 12,
+    "critical_paths_total": 14,
+    "test_suite_execution_time_seconds": 0.3017599582672119,
+    "test_failures": 2,
+    "test_errors": 2,
+    "timestamp": "2025-08-13 23:33:34.291198"
+  },
+  "overall_quality_score": 0.5966593246521809,
+  "gate_status": {
+    "security_gate": {
+      "pass": false,
+      "weight": 0.3
+    },
+    "performance_gate": {
+      "pass": false,
+      "weight": 0.4
+    },
+    "test_gate": {
+      "pass": false,
+      "weight": 0.3
+    },
+    "overall_pass": false
+  },
+  "recommendations": [
+    {
+      "category": "Security",
+      "priority": "Critical",
+      "description": "Fix 1 critical vulnerabilities in sast scan",
+      "impact": "High security risk"
+    },
+    {
+      "category": "Security",
+      "priority": "Critical",
+      "description": "Fix 1 critical vulnerabilities in dast scan",
+      "impact": "High security risk"
+    },
+    {
+      "category": "Security",
+      "priority": "Critical",
+      "description": "Fix 1 critical vulnerabilities in secrets scan",
+      "impact": "High security risk"
+    },
+    {
+      "category": "Performance",
+      "priority": "High",
+      "description": "Optimize performance for: load_test, scalability",
+      "impact": "Improved user experience and resource efficiency"
+    },
+    {
+      "category": "Quality",
+      "priority": "Medium",
+      "description": "Implement comprehensive code review process and quality metrics tracking",
+      "impact": "Overall code quality improvement"
+    }
+  ],
+  "compliance_status": {
+    "SOC2": {
+      "compliant": false,
+      "score": 0.3333333333333333
+    },
+    "ISO27001": {
+      "compliant": false,
+      "score": 0.0
+    },
+    "GDPR": {
+      "compliant": false,
+      "score": 0.0
+    }
+  },
+  "security_score": 0.1533333333333333,
+  "performance_score": 0.7333333333333334,
+  "test_score": 0.8577533043961583,
+  "quality_grade": "F"
+}

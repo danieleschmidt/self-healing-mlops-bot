@@ -1,0 +1,890 @@
+{
+  "deployment_summary": {
+    "total_regions": 11,
+    "successful_deployments": 8,
+    "failed_deployments": 3,
+    "deployment_details": {
+      "us-east-1": {
+        "region_id": "us-east-1",
+        "status": "success",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 25.23219745378787,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up networking",
+            "duration_seconds": 18.05262683944278,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying application containers",
+            "duration_seconds": 24.11769383332249,
+            "status": "completed"
+          },
+          {
+            "step": "Configuring load balancers",
+            "duration_seconds": 25.700859708213414,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up monitoring",
+            "duration_seconds": 25.354080652912227,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 16.945756222201574,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 28.208261440343115,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.1425478458404541,
+        "resources_created": [
+          "vpc-us-east-1",
+          "subnet-us-east-1-1",
+          "subnet-us-east-1-2",
+          "lb-us-east-1",
+          "asg-us-east-1",
+          "rds-us-east-1"
+        ],
+        "endpoints": [
+          "https://api-us-east-1.example.com",
+          "https://web-us-east-1.example.com"
+        ]
+      },
+      "us-west-2": {
+        "region_id": "us-west-2",
+        "status": "failed",
+        "steps_completed": [],
+        "deployment_time_seconds": 0.020299434661865234,
+        "resources_created": [],
+        "endpoints": [],
+        "error": "Failed at step: Provisioning infrastructure"
+      },
+      "ca-central-1": {
+        "region_id": "ca-central-1",
+        "status": "success",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 13.442352616297988,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up networking",
+            "duration_seconds": 16.554736784262197,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying application containers",
+            "duration_seconds": 10.1075193505717,
+            "status": "completed"
+          },
+          {
+            "step": "Configuring load balancers",
+            "duration_seconds": 29.042879987774754,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up monitoring",
+            "duration_seconds": 15.932565915523805,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 18.236905501997168,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 29.33144048953227,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.14243721961975098,
+        "resources_created": [
+          "vpc-ca-central-1",
+          "subnet-ca-central-1-1",
+          "subnet-ca-central-1-2",
+          "lb-ca-central-1",
+          "asg-ca-central-1",
+          "rds-ca-central-1"
+        ],
+        "endpoints": [
+          "https://api-ca-central-1.example.com",
+          "https://web-ca-central-1.example.com"
+        ]
+      },
+      "eu-west-1": {
+        "region_id": "eu-west-1",
+        "status": "success",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 13.524425292884818,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up networking",
+            "duration_seconds": 20.301698735024406,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying application containers",
+            "duration_seconds": 25.964860825042315,
+            "status": "completed"
+          },
+          {
+            "step": "Configuring load balancers",
+            "duration_seconds": 25.92672915322746,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up monitoring",
+            "duration_seconds": 27.71905082154005,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 13.394179674373163,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 27.178017408301823,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.14286255836486816,
+        "resources_created": [
+          "vpc-eu-west-1",
+          "subnet-eu-west-1-1",
+          "subnet-eu-west-1-2",
+          "lb-eu-west-1",
+          "asg-eu-west-1",
+          "rds-eu-west-1"
+        ],
+        "endpoints": [
+          "https://api-eu-west-1.example.com",
+          "https://web-eu-west-1.example.com"
+        ]
+      },
+      "eu-central-1": {
+        "region_id": "eu-central-1",
+        "status": "success",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 21.04105651525571,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up networking",
+            "duration_seconds": 10.376164865550175,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying application containers",
+            "duration_seconds": 14.259171005392513,
+            "status": "completed"
+          },
+          {
+            "step": "Configuring load balancers",
+            "duration_seconds": 14.331825955063064,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up monitoring",
+            "duration_seconds": 26.804954940187773,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 17.08667392954013,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 13.700705149536113,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.14261341094970703,
+        "resources_created": [
+          "vpc-eu-central-1",
+          "subnet-eu-central-1-1",
+          "subnet-eu-central-1-2",
+          "lb-eu-central-1",
+          "asg-eu-central-1",
+          "rds-eu-central-1"
+        ],
+        "endpoints": [
+          "https://api-eu-central-1.example.com",
+          "https://web-eu-central-1.example.com"
+        ]
+      },
+      "eu-north-1": {
+        "region_id": "eu-north-1",
+        "status": "failed",
+        "steps_completed": [],
+        "deployment_time_seconds": 0.020346641540527344,
+        "resources_created": [],
+        "endpoints": [],
+        "error": "Failed at step: Provisioning infrastructure"
+      },
+      "ap-southeast-1": {
+        "region_id": "ap-southeast-1",
+        "status": "success",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 29.148632152071304,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up networking",
+            "duration_seconds": 16.362665111031113,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying application containers",
+            "duration_seconds": 13.950463567357257,
+            "status": "completed"
+          },
+          {
+            "step": "Configuring load balancers",
+            "duration_seconds": 16.491841620894277,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up monitoring",
+            "duration_seconds": 10.650419412440515,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 27.750442708570745,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 15.572259841119285,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.14259052276611328,
+        "resources_created": [
+          "vpc-ap-southeast-1",
+          "subnet-ap-southeast-1-1",
+          "subnet-ap-southeast-1-2",
+          "lb-ap-southeast-1",
+          "asg-ap-southeast-1",
+          "rds-ap-southeast-1"
+        ],
+        "endpoints": [
+          "https://api-ap-southeast-1.example.com",
+          "https://web-ap-southeast-1.example.com"
+        ]
+      },
+      "ap-northeast-1": {
+        "region_id": "ap-northeast-1",
+        "status": "success",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 29.157638666637716,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up networking",
+            "duration_seconds": 13.520735797218572,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying application containers",
+            "duration_seconds": 15.637910672734082,
+            "status": "completed"
+          },
+          {
+            "step": "Configuring load balancers",
+            "duration_seconds": 21.919603080151045,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up monitoring",
+            "duration_seconds": 18.52838735211567,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 11.05530952457999,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 13.850432206777768,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.14261746406555176,
+        "resources_created": [
+          "vpc-ap-northeast-1",
+          "subnet-ap-northeast-1-1",
+          "subnet-ap-northeast-1-2",
+          "lb-ap-northeast-1",
+          "asg-ap-northeast-1",
+          "rds-ap-northeast-1"
+        ],
+        "endpoints": [
+          "https://api-ap-northeast-1.example.com",
+          "https://web-ap-northeast-1.example.com"
+        ]
+      },
+      "ap-south-1": {
+        "region_id": "ap-south-1",
+        "status": "success",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 21.042124042939072,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up networking",
+            "duration_seconds": 28.854161459868862,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying application containers",
+            "duration_seconds": 14.089877220803064,
+            "status": "completed"
+          },
+          {
+            "step": "Configuring load balancers",
+            "duration_seconds": 10.132676874951098,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up monitoring",
+            "duration_seconds": 26.863402808015405,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 12.82443669527659,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 13.514853933990125,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.14281606674194336,
+        "resources_created": [
+          "vpc-ap-south-1",
+          "subnet-ap-south-1-1",
+          "subnet-ap-south-1-2",
+          "lb-ap-south-1",
+          "asg-ap-south-1",
+          "rds-ap-south-1"
+        ],
+        "endpoints": [
+          "https://api-ap-south-1.example.com",
+          "https://web-ap-south-1.example.com"
+        ]
+      },
+      "sa-east-1": {
+        "region_id": "sa-east-1",
+        "status": "success",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 24.584769402566124,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up networking",
+            "duration_seconds": 28.492865443103668,
+            "status": "completed"
+          },
+          {
+            "step": "Deploying application containers",
+            "duration_seconds": 16.75887956156743,
+            "status": "completed"
+          },
+          {
+            "step": "Configuring load balancers",
+            "duration_seconds": 13.169279397503537,
+            "status": "completed"
+          },
+          {
+            "step": "Setting up monitoring",
+            "duration_seconds": 10.661828582123217,
+            "status": "completed"
+          },
+          {
+            "step": "Running health checks",
+            "duration_seconds": 10.183242173313223,
+            "status": "completed"
+          },
+          {
+            "step": "Enabling traffic routing",
+            "duration_seconds": 24.853552580856217,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.14239859580993652,
+        "resources_created": [
+          "vpc-sa-east-1",
+          "subnet-sa-east-1-1",
+          "subnet-sa-east-1-2",
+          "lb-sa-east-1",
+          "asg-sa-east-1",
+          "rds-sa-east-1"
+        ],
+        "endpoints": [
+          "https://api-sa-east-1.example.com",
+          "https://web-sa-east-1.example.com"
+        ]
+      },
+      "af-south-1": {
+        "region_id": "af-south-1",
+        "status": "failed",
+        "steps_completed": [
+          {
+            "step": "Provisioning infrastructure",
+            "duration_seconds": 24.798151162100584,
+            "status": "completed"
+          }
+        ],
+        "deployment_time_seconds": 0.040686845779418945,
+        "resources_created": [],
+        "endpoints": [],
+        "error": "Failed at step: Setting up networking"
+      }
+    }
+  },
+  "i18n_validation": {
+    "overall_completion": 0.787,
+    "language_status": {
+      "en": {
+        "completion_percentage": 100.0,
+        "missing_keys": [],
+        "quality_score": 0.8005957238764158,
+        "rtl_ready": true
+      },
+      "es": {
+        "completion_percentage": 85.0,
+        "missing_keys": [],
+        "quality_score": 0.8360384432910392,
+        "rtl_ready": true
+      },
+      "fr": {
+        "completion_percentage": 90.0,
+        "missing_keys": [],
+        "quality_score": 0.895722782274202,
+        "rtl_ready": true
+      },
+      "de": {
+        "completion_percentage": 88.0,
+        "missing_keys": [],
+        "quality_score": 0.8823328145249135,
+        "rtl_ready": true
+      },
+      "ja": {
+        "completion_percentage": 75.0,
+        "missing_keys": [],
+        "quality_score": 0.9561722561891567,
+        "rtl_ready": true
+      },
+      "zh": {
+        "completion_percentage": 70.0,
+        "missing_keys": [],
+        "quality_score": 0.8925285350187279,
+        "rtl_ready": true
+      },
+      "pt": {
+        "completion_percentage": 82.0,
+        "missing_keys": [],
+        "quality_score": 0.8896266908473467,
+        "rtl_ready": true
+      },
+      "hi": {
+        "completion_percentage": 65.0,
+        "missing_keys": [],
+        "quality_score": 0.9537079103804318,
+        "rtl_ready": true
+      },
+      "ar": {
+        "completion_percentage": 60.0,
+        "missing_keys": [],
+        "quality_score": 0.8019259411657793,
+        "rtl_ready": true
+      },
+      "ru": {
+        "completion_percentage": 72.0,
+        "missing_keys": [],
+        "quality_score": 0.9213278680201752,
+        "rtl_ready": true
+      }
+    },
+    "missing_translations": {},
+    "quality_issues": [],
+    "recommendations": [
+      "Complete translations for languages with <80% completion: ja, zh, hi, ar, ru",
+      "Overall translation completion is below 85%. Consider prioritizing translation work."
+    ]
+  },
+  "compliance_assessment": {
+    "overall_compliance_score": 0.0,
+    "framework_compliance": {
+      "GDPR": {
+        "framework": "GDPR",
+        "regions_assessed": [
+          "eu-west-1",
+          "eu-central-1"
+        ],
+        "requirements_total": 6,
+        "requirements_met": 8,
+        "overall_compliant": false,
+        "compliance_score": 0.6666666666666666,
+        "gaps": [
+          "consent_management",
+          "privacy_by_design",
+          "data_minimization",
+          "privacy_by_design"
+        ],
+        "region_details": {
+          "eu-west-1": "ComplianceCheck(framework='GDPR', region='eu-west-1', compliant=False, compliance_score=0.7391758130777975, requirements_met=['right_to_erasure', 'data_breach_notification', 'data_portability', 'data_minimization'], requirements_missing=['consent_management', 'privacy_by_design'], remediation_actions=['Implement consent management controls', 'Implement privacy by design controls'], audit_trail_id='f675ed77584c', last_updated=datetime.datetime(2025, 8, 13, 23, 36, 28, 808216))",
+          "eu-central-1": "ComplianceCheck(framework='GDPR', region='eu-central-1', compliant=False, compliance_score=0.8158659760163038, requirements_met=['right_to_erasure', 'data_portability', 'consent_management', 'data_breach_notification'], requirements_missing=['data_minimization', 'privacy_by_design'], remediation_actions=['Implement data minimization controls', 'Implement privacy by design controls'], audit_trail_id='1f24429eb3c4', last_updated=datetime.datetime(2025, 8, 13, 23, 36, 28, 808243))"
+        }
+      },
+      "PDPA": {
+        "framework": "PDPA",
+        "regions_assessed": [
+          "ap-southeast-1"
+        ],
+        "requirements_total": 5,
+        "requirements_met": 3,
+        "overall_compliant": false,
+        "compliance_score": 0.6,
+        "gaps": [
+          "consent_management",
+          "data_portability"
+        ],
+        "region_details": {
+          "ap-southeast-1": "ComplianceCheck(framework='PDPA', region='ap-southeast-1', compliant=False, compliance_score=0.7387077806265728, requirements_met=['correction_requests', 'data_breach_notification', 'access_requests'], requirements_missing=['consent_management', 'data_portability'], remediation_actions=['Implement consent management controls', 'Implement data portability controls'], audit_trail_id='9a450c523b49', last_updated=datetime.datetime(2025, 8, 13, 23, 36, 28, 808279))"
+        }
+      },
+      "LGPD": {
+        "framework": "LGPD",
+        "regions_assessed": [
+          "sa-east-1"
+        ],
+        "requirements_total": 5,
+        "requirements_met": 4,
+        "overall_compliant": false,
+        "compliance_score": 0.8,
+        "gaps": [
+          "lawful_basis"
+        ],
+        "region_details": {
+          "sa-east-1": "ComplianceCheck(framework='LGPD', region='sa-east-1', compliant=False, compliance_score=0.8152070698535644, requirements_met=['privacy_impact_assessment', 'consent_management', 'data_subject_rights', 'data_breach_notification'], requirements_missing=['lawful_basis'], remediation_actions=['Implement lawful basis controls'], audit_trail_id='9a786d8e9c3e', last_updated=datetime.datetime(2025, 8, 13, 23, 36, 28, 808303))"
+        }
+      },
+      "PIPEDA": {
+        "framework": "PIPEDA",
+        "regions_assessed": [
+          "ca-central-1"
+        ],
+        "requirements_total": 5,
+        "requirements_met": 3,
+        "overall_compliant": false,
+        "compliance_score": 0.6,
+        "gaps": [
+          "accountability",
+          "limiting_collection"
+        ],
+        "region_details": {
+          "ca-central-1": "ComplianceCheck(framework='PIPEDA', region='ca-central-1', compliant=False, compliance_score=0.7443314728185425, requirements_met=['safeguards', 'identifying_purposes', 'consent'], requirements_missing=['accountability', 'limiting_collection'], remediation_actions=['Implement accountability controls', 'Implement limiting collection controls'], audit_trail_id='43dc4dfc59ee', last_updated=datetime.datetime(2025, 8, 13, 23, 36, 28, 808341))"
+        }
+      }
+    },
+    "region_compliance": {},
+    "critical_gaps": [
+      "consent_management",
+      "privacy_by_design",
+      "data_minimization",
+      "privacy_by_design",
+      "consent_management",
+      "data_portability",
+      "lawful_basis",
+      "accountability",
+      "limiting_collection"
+    ],
+    "remediation_plan": [
+      {
+        "category": "Consent",
+        "priority": "Critical",
+        "gaps": [
+          "consent_management",
+          "consent_management"
+        ],
+        "estimated_effort_days": 12,
+        "recommended_actions": [
+          "Implement consent management system",
+          "Create consent policies and procedures",
+          "Train staff on consent requirements"
+        ]
+      },
+      {
+        "category": "Privacy",
+        "priority": "High",
+        "gaps": [
+          "privacy_by_design",
+          "privacy_by_design"
+        ],
+        "estimated_effort_days": 10,
+        "recommended_actions": [
+          "Implement privacy management system",
+          "Create privacy policies and procedures",
+          "Train staff on privacy requirements"
+        ]
+      },
+      {
+        "category": "Data",
+        "priority": "High",
+        "gaps": [
+          "data_minimization",
+          "data_portability"
+        ],
+        "estimated_effort_days": 10,
+        "recommended_actions": [
+          "Implement data management system",
+          "Create data policies and procedures",
+          "Train staff on data requirements"
+        ]
+      },
+      {
+        "category": "Lawful",
+        "priority": "Low",
+        "gaps": [
+          "lawful_basis"
+        ],
+        "estimated_effort_days": 6,
+        "recommended_actions": [
+          "Implement lawful management system",
+          "Create lawful policies and procedures",
+          "Train staff on lawful requirements"
+        ]
+      },
+      {
+        "category": "Accountability",
+        "priority": "Low",
+        "gaps": [
+          "accountability"
+        ],
+        "estimated_effort_days": 13,
+        "recommended_actions": [
+          "Implement accountability management system",
+          "Create accountability policies and procedures",
+          "Train staff on accountability requirements"
+        ]
+      },
+      {
+        "category": "Limiting",
+        "priority": "Low",
+        "gaps": [
+          "limiting_collection"
+        ],
+        "estimated_effort_days": 6,
+        "recommended_actions": [
+          "Implement limiting management system",
+          "Create limiting policies and procedures",
+          "Train staff on limiting requirements"
+        ]
+      }
+    ]
+  },
+  "global_health": {
+    "overall_health": "healthy",
+    "total_regions": 8,
+    "healthy_regions": 8,
+    "degraded_regions": 0,
+    "down_regions": 0,
+    "global_response_time_p95": 188.64125433083842,
+    "global_error_rate": 0.21816745567348622,
+    "failover_readiness": 1.0,
+    "region_details": {
+      "us-east-1": {
+        "region_id": "us-east-1",
+        "service_status": "healthy",
+        "response_time_p95": 146.67970287894138,
+        "error_rate_percent": 0.27446991910490637,
+        "active_connections": 960,
+        "cpu_utilization": 31.81860716064389,
+        "memory_utilization": 79.82825680732026,
+        "disk_utilization": 22.4915258262596,
+        "data_sync_lag_ms": 22.035983977090474,
+        "failover_ready": true,
+        "last_health_check": "2025-08-13 23:36:27.723863"
+      },
+      "ca-central-1": {
+        "region_id": "ca-central-1",
+        "service_status": "healthy",
+        "response_time_p95": 130.33348452007596,
+        "error_rate_percent": 0.11006926078054655,
+        "active_connections": 442,
+        "cpu_utilization": 39.94892663483307,
+        "memory_utilization": 57.049758613823656,
+        "disk_utilization": 29.644890048112824,
+        "data_sync_lag_ms": 30.37200362688553,
+        "failover_ready": true,
+        "last_health_check": "2025-08-13 23:36:27.887313"
+      },
+      "eu-west-1": {
+        "region_id": "eu-west-1",
+        "service_status": "healthy",
+        "response_time_p95": 175.5305709554093,
+        "error_rate_percent": 0.23947667577810386,
+        "active_connections": 618,
+        "cpu_utilization": 50.55327609978413,
+        "memory_utilization": 56.5314752355916,
+        "disk_utilization": 32.81933014039649,
+        "data_sync_lag_ms": 92.9631744637547,
+        "failover_ready": true,
+        "last_health_check": "2025-08-13 23:36:28.030702"
+      },
+      "eu-central-1": {
+        "region_id": "eu-central-1",
+        "service_status": "healthy",
+        "response_time_p95": 73.56929391373798,
+        "error_rate_percent": 0.24076610029315537,
+        "active_connections": 634,
+        "cpu_utilization": 45.96745827863907,
+        "memory_utilization": 74.14141017481344,
+        "disk_utilization": 53.735925344612625,
+        "data_sync_lag_ms": 95.26030240324747,
+        "failover_ready": true,
+        "last_health_check": "2025-08-13 23:36:28.173697"
+      },
+      "ap-southeast-1": {
+        "region_id": "ap-southeast-1",
+        "service_status": "healthy",
+        "response_time_p95": 110.12467434360744,
+        "error_rate_percent": 0.03552276289750286,
+        "active_connections": 237,
+        "cpu_utilization": 41.48124702988506,
+        "memory_utilization": 75.65336859671078,
+        "disk_utilization": 30.25790222130556,
+        "data_sync_lag_ms": 65.44776134037505,
+        "failover_ready": true,
+        "last_health_check": "2025-08-13 23:36:28.337242"
+      },
+      "ap-northeast-1": {
+        "region_id": "ap-northeast-1",
+        "service_status": "healthy",
+        "response_time_p95": 132.1979572356085,
+        "error_rate_percent": 0.36511086098502415,
+        "active_connections": 125,
+        "cpu_utilization": 56.100664267010536,
+        "memory_utilization": 51.19031682013634,
+        "disk_utilization": 38.79512907155977,
+        "data_sync_lag_ms": 39.20932452127153,
+        "failover_ready": true,
+        "last_health_check": "2025-08-13 23:36:28.480238"
+      },
+      "ap-south-1": {
+        "region_id": "ap-south-1",
+        "service_status": "healthy",
+        "response_time_p95": 136.31207963437305,
+        "error_rate_percent": 0.32492705031762287,
+        "active_connections": 432,
+        "cpu_utilization": 44.44492137931978,
+        "memory_utilization": 72.66984286838859,
+        "disk_utilization": 46.365275914342064,
+        "data_sync_lag_ms": 23.11917575859748,
+        "failover_ready": true,
+        "last_health_check": "2025-08-13 23:36:28.623385"
+      },
+      "sa-east-1": {
+        "region_id": "sa-east-1",
+        "service_status": "healthy",
+        "response_time_p95": 188.64125433083842,
+        "error_rate_percent": 0.1549970152310278,
+        "active_connections": 828,
+        "cpu_utilization": 36.8121607818817,
+        "memory_utilization": 59.96208026558203,
+        "disk_utilization": 23.13722224058491,
+        "data_sync_lag_ms": 92.00667641552454,
+        "failover_ready": true,
+        "last_health_check": "2025-08-13 23:36:28.766368"
+      }
+    }
+  },
+  "traffic_distribution": {
+    "current_distribution": {
+      "us-east-1": 0.1875,
+      "us-west-2": 0.3,
+      "ca-central-1": 0.03125000000000001,
+      "eu-west-1": 0.1875,
+      "eu-central-1": 0.09375,
+      "eu-north-1": 0.1,
+      "ap-southeast-1": 0.1875,
+      "ap-northeast-1": 0.09375,
+      "ap-south-1": 0.03125000000000001,
+      "sa-east-1": 0.1875,
+      "af-south-1": 0.6
+    },
+    "optimized_distribution": {
+      "us-east-1": 0.18678942718341804,
+      "ca-central-1": 0.03178023259587343,
+      "eu-west-1": 0.18053738036708186,
+      "eu-central-1": 0.10143081421069092,
+      "ap-southeast-1": 0.19525794983658648,
+      "ap-northeast-1": 0.09489339295105098,
+      "ap-south-1": 0.0314938691156601,
+      "sa-east-1": 0.1778169337396382
+    },
+    "optimization_impact": {
+      "ap-southeast-1": 0.007757949836586481,
+      "af-south-1": -0.6,
+      "ap-northeast-1": 0.001143392951050981,
+      "eu-north-1": -0.1,
+      "ca-central-1": 0.0005302325958734255,
+      "sa-east-1": -0.009683066260361806,
+      "eu-central-1": 0.007680814210690917,
+      "us-west-2": -0.3,
+      "eu-west-1": -0.006962619632918138,
+      "ap-south-1": 0.00024386911566009334,
+      "us-east-1": -0.0007105728165819614
+    }
+  },
+  "recommendations": [
+    {
+      "category": "Deployment",
+      "priority": "High",
+      "recommendation": "Investigate and retry failed deployments in 3 regions",
+      "impact": "Improved global coverage and redundancy"
+    },
+    {
+      "category": "Internationalization",
+      "priority": "Medium",
+      "recommendation": "Complete translations (currently 78.7%)",
+      "impact": "Better user experience in non-English markets"
+    },
+    {
+      "category": "Compliance",
+      "priority": "Critical",
+      "recommendation": "Address compliance gaps (current score: 0.0%)",
+      "impact": "Legal compliance and risk mitigation"
+    }
+  ]
+}
