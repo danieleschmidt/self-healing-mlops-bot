@@ -570,7 +570,31 @@ class SecurityMiddleware:
         return self.authz_manager.check_resource_access(user, path, method)
 
 
-# Global instances
-auth_manager = AuthenticationManager()
-authz_manager = AuthorizationManager(auth_manager)
-security_middleware = SecurityMiddleware(auth_manager, authz_manager)
+# Global instances - lazy initialization
+auth_manager = None
+authz_manager = None
+security_middleware = None
+
+
+def get_auth_manager() -> AuthenticationManager:
+    """Get or create the global authentication manager."""
+    global auth_manager
+    if auth_manager is None:
+        auth_manager = AuthenticationManager()
+    return auth_manager
+
+
+def get_authz_manager() -> AuthorizationManager:
+    """Get or create the global authorization manager."""
+    global authz_manager
+    if authz_manager is None:
+        authz_manager = AuthorizationManager(get_auth_manager())
+    return authz_manager
+
+
+def get_security_middleware() -> SecurityMiddleware:
+    """Get or create the global security middleware."""
+    global security_middleware
+    if security_middleware is None:
+        security_middleware = SecurityMiddleware(get_auth_manager(), get_authz_manager())
+    return security_middleware
