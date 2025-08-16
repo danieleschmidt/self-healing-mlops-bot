@@ -2,7 +2,8 @@
 
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
+import uuid
 import json
 from pathlib import Path
 
@@ -24,8 +25,8 @@ class Context:
     state: Dict[str, Any] = field(default_factory=dict)
     
     # Execution metadata
-    execution_id: str = ""
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Error information
     error_message: Optional[str] = None

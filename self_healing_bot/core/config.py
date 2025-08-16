@@ -1,58 +1,64 @@
 """Configuration management for the self-healing bot."""
 
 import os
-from typing import Optional, Dict, Any
-from pydantic import Field, validator
+from typing import Optional, Dict, Any, Annotated
+from pydantic import Field, field_validator, ConfigDict
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
 
 class BotConfig(BaseSettings):
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     """Main configuration for the self-healing bot."""
     
     # GitHub App Configuration
-    github_app_id: str = Field("test", env="GITHUB_APP_ID")
-    github_private_key_path: str = Field("/tmp/test-key.pem", env="GITHUB_PRIVATE_KEY_PATH")
-    github_webhook_secret: str = Field("test-secret", env="GITHUB_WEBHOOK_SECRET")
-    github_token: Optional[str] = Field(None, env="GITHUB_TOKEN")
+    github_app_id: Annotated[str, Field(description="GitHub App ID")] = "test"
+    github_private_key_path: Annotated[str, Field(description="Path to GitHub private key")] = "/tmp/test-key.pem"
+    github_webhook_secret: Annotated[str, Field(description="GitHub webhook secret")] = "test-secret"
+    github_token: Annotated[Optional[str], Field(description="GitHub token")] = None
     
     # Server Configuration
-    host: str = Field("0.0.0.0", env="HOST")
-    port: int = Field(8080, env="PORT")
-    debug: bool = Field(False, env="DEBUG")
-    environment: str = Field("production", env="ENVIRONMENT")
+    host: Annotated[str, Field(description="Server host")] = "0.0.0.0"
+    port: Annotated[int, Field(description="Server port")] = 8080
+    debug: Annotated[bool, Field(description="Debug mode")] = False
+    environment: Annotated[str, Field(description="Environment")] = "production"
     
     # Database Configuration
-    database_url: str = Field("sqlite:///test.db", env="DATABASE_URL")
-    redis_url: str = Field("redis://localhost:6379/0", env="REDIS_URL")
+    database_url: Annotated[str, Field(description="Database URL")] = "sqlite:///test.db"
+    redis_url: Annotated[str, Field(description="Redis URL")] = "redis://localhost:6379/0"
     
     # Celery Configuration
-    celery_broker_url: str = Field("redis://localhost:6379/1", env="CELERY_BROKER_URL")
-    celery_result_backend: str = Field("redis://localhost:6379/2", env="CELERY_RESULT_BACKEND")
+    celery_broker_url: Annotated[str, Field(description="Celery broker URL")] = "redis://localhost:6379/1"
+    celery_result_backend: Annotated[str, Field(description="Celery result backend")] = "redis://localhost:6379/2"
     
     # Monitoring Configuration
-    prometheus_port: int = Field(9090, env="PROMETHEUS_PORT")
-    log_level: str = Field("INFO", env="LOG_LEVEL")
+    prometheus_port: Annotated[int, Field(description="Prometheus port")] = 9090
+    log_level: Annotated[str, Field(description="Log level")] = "INFO"
     
     # Notification Configuration
-    slack_webhook_url: Optional[str] = Field(None, env="SLACK_WEBHOOK_URL")
-    slack_bot_token: Optional[str] = Field(None, env="SLACK_BOT_TOKEN")
+    slack_webhook_url: Annotated[Optional[str], Field(description="Slack webhook URL")] = None
+    slack_bot_token: Annotated[Optional[str], Field(description="Slack bot token")] = None
     
     # ML Platform Integrations
-    mlflow_tracking_uri: Optional[str] = Field(None, env="MLFLOW_TRACKING_URI")
-    wandb_api_key: Optional[str] = Field(None, env="WANDB_API_KEY")
+    mlflow_tracking_uri: Annotated[Optional[str], Field(description="MLflow tracking URI")] = None
+    wandb_api_key: Annotated[Optional[str], Field(description="Weights & Biases API key")] = None
     
     # Security
-    secret_key: str = Field("test-secret-key-for-development", env="SECRET_KEY")
-    encryption_key: str = Field("test-encryption-key-32-bytes-long", env="ENCRYPTION_KEY")
+    secret_key: Annotated[str, Field(description="Secret key")] = "test-secret-key-for-development"
+    encryption_key: Annotated[str, Field(description="Encryption key")] = "test-encryption-key-32-bytes-long"
     
     # Rate Limiting
-    rate_limit_per_minute: int = Field(60, env="RATE_LIMIT_PER_MINUTE")
+    rate_limit_per_minute: Annotated[int, Field(description="Rate limit per minute")] = 60
     
     # Health Check Configuration
-    health_check_interval: int = Field(300, env="HEALTH_CHECK_INTERVAL")
+    health_check_interval: Annotated[int, Field(description="Health check interval")] = 300
     
-    @validator("github_private_key_path")
+    @field_validator("github_private_key_path")
+    @classmethod
     def validate_private_key_path(cls, v: str) -> str:
         """Validate that the private key file exists."""
         path = Path(v)
@@ -66,7 +72,8 @@ class BotConfig(BaseSettings):
             raise ValueError(f"GitHub private key file not found: {v}")
         return v
     
-    @validator("log_level")
+    @field_validator("log_level")
+    @classmethod
     def validate_log_level(cls, v: str) -> str:
         """Validate log level."""
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -80,9 +87,6 @@ class BotConfig(BaseSettings):
         with open(self.github_private_key_path, "r") as f:
             return f.read()
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 class PlaybookConfig:
