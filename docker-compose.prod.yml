@@ -1,25 +1,35 @@
 version: '3.8'
 
 services:
-  app:
+  # Main Self-Healing Bot Application
+  self-healing-bot:
     build:
       context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-      - "9090:9090"  # Prometheus metrics
+      dockerfile: Dockerfile.prod
+    container_name: self-healing-bot
     environment:
       - ENVIRONMENT=production
-      - DEBUG=false
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/self_healing_bot
+      - LOG_LEVEL=INFO
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_PRIVATE_KEY_PATH=/app/secrets/github-private-key.pem
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/self_healing_bot
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - PROMETHEUS_PORT=9090
+      - SECRET_KEY=${SECRET_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - RATE_LIMIT_PER_MINUTE=300
+      - HEALTH_CHECK_INTERVAL=60
+    ports:
+      - "8080:8080"
+      - "9090:9090"
     volumes:
-      - ./keys:/app/keys:ro
-      - ./logs:/app/logs
+      - ./secrets:/app/secrets:ro
+      - app-logs:/app/logs
     depends_on:
-      - db
+      - postgres
       - redis
     restart: unless-stopped
     healthcheck:
@@ -27,131 +37,53 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+    networks:
+      - self-healing-network
 
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: celery -A self_healing_bot.worker worker --loglevel=info
-    environment:
-      - ENVIRONMENT=production
-      - DEBUG=false
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/self_healing_bot
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-    volumes:
-      - ./keys:/app/keys:ro
-      - ./logs:/app/logs
-    depends_on:
-      - db
-      - redis
-    restart: unless-stopped
-    deploy:
-      replicas: 2
-
-  beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: celery -A self_healing_bot.worker beat --loglevel=info
-    environment:
-      - ENVIRONMENT=production
-      - DEBUG=false
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/self_healing_bot
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-    volumes:
-      - ./keys:/app/keys:ro
-      - ./logs:/app/logs
-      - celery_beat_data:/app/celerybeat-schedule
-    depends_on:
-      - db
-      - redis
-    restart: unless-stopped
-
-  db:
+  # PostgreSQL Database
+  postgres:
     image: postgres:15-alpine
+    container_name: postgres-db
     environment:
       - POSTGRES_DB=self_healing_bot
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U postgres -d self_healing_bot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - self-healing-network
 
+  # Redis for Caching and Message Broker
   redis:
     image: redis:7-alpine
+    container_name: redis-cache
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data
+      - redis-data:/data
+    ports:
+      - "6379:6379"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-      - nginx_logs:/var/log/nginx
-    depends_on:
-      - app
-    restart: unless-stopped
-
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9091:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
-    depends_on:
-      - prometheus
-    restart: unless-stopped
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - self-healing-network
 
 volumes:
-  postgres_data:
-  redis_data:
-  grafana_data:
-  prometheus_data:
-  nginx_logs:
-  celery_beat_data:
+  postgres-data:
+  redis-data:
+  app-logs:
 
 networks:
-  default:
+  self-healing-network:
     driver: bridge
