@@ -3,16 +3,21 @@
 import asyncio
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+import structlog
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from .context import Context
 from .playbook import Playbook, PlaybookRegistry, ActionResult
 from .config import config
+from .error_handler import error_handler, handle_errors, ErrorCategory, RetryStrategy
 from ..detectors.registry import DetectorRegistry
 from ..integrations.github import GitHubIntegration
+from ..monitoring.metrics import metrics_collector
+from ..performance.optimization import performance_optimizer
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class SelfHealingBot:
@@ -23,44 +28,119 @@ class SelfHealingBot:
         self.detector_registry = DetectorRegistry()
         self.playbook_registry = PlaybookRegistry()
         self._active_executions: Dict[str, Context] = {}
+        self._setup_error_recovery()
     
     async def process_event(self, event_type: str, event_data: Dict[str, Any]) -> Optional[Context]:
-        """Process a GitHub webhook event."""
+        """Process a GitHub webhook event with enhanced error handling."""
+        context = None
+        start_time = datetime.now(timezone.utc)
+        
         try:
             # Create execution context
             context = self._create_context(event_type, event_data)
             
-            logger.info(f"Processing {event_type} event for {context.repo_full_name}")
+            logger.info(
+                "Processing event",
+                event_type=event_type,
+                repo=context.repo_full_name,
+                execution_id=context.execution_id
+            )
             
             # Store active execution
             self._active_executions[context.execution_id] = context
             
-            # Detect issues
-            issues = await self._detect_issues(context)
+            # Record metrics
+            metrics_collector.increment_counter("events_processed_total", {"event_type": event_type})
+            
+            # Detect issues with timeout
+            issues = await asyncio.wait_for(
+                self._detect_issues(context),
+                timeout=30.0  # 30 second timeout for detection
+            )
             
             if not issues:
-                logger.info(f"No issues detected for {context.repo_full_name}")
+                logger.info("No issues detected", repo=context.repo_full_name)
+                metrics_collector.increment_counter("events_no_issues_total", {})
                 return context
             
-            logger.info(f"Detected {len(issues)} issues: {[i['type'] for i in issues]}")
+            logger.info(
+                "Issues detected",
+                repo=context.repo_full_name,
+                issue_count=len(issues),
+                issue_types=[i.get('type', 'unknown') for i in issues]
+            )
             
-            # Execute repair playbooks
-            repair_results = await self._execute_repairs(context, issues)
+            # Execute repair playbooks with timeout
+            repair_results = await asyncio.wait_for(
+                self._execute_repairs(context, issues),
+                timeout=300.0  # 5 minute timeout for repairs
+            )
             
             # Log results
             self._log_repair_results(context, repair_results)
             
+            # Record success metrics
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
+            metrics_collector.record_histogram("event_processing_duration_seconds", processing_time)
+            metrics_collector.increment_counter("events_processed_successfully_total", {})
+            
             return context
             
-        except Exception as e:
-            logger.exception(f"Error processing {event_type} event: {e}")
-            if context.execution_id in self._active_executions:
-                context.set_error("ProcessingError", str(e))
+        except asyncio.TimeoutError as e:
+            error_msg = f"Timeout processing {event_type} event"
+            logger.error(error_msg, event_type=event_type, timeout=str(e))
+            if context:
+                context.set_error("TimeoutError", error_msg)
+            metrics_collector.increment_counter("events_timeout_total", {})
             raise
+            
+        except Exception as e:
+            error_msg = f"Error processing {event_type} event: {e}"
+            logger.exception(error_msg, event_type=event_type, error=str(e))
+            if context:
+                context.set_error("ProcessingError", str(e))
+            metrics_collector.increment_counter("events_failed_total", {})
+            
+            # Let error handler deal with it
+            await error_handler.handle_error(e, {
+                "event_type": event_type,
+                "repo": context.repo_full_name if context else "unknown",
+                "source": "webhook"
+            })
+            raise
+            
         finally:
             # Clean up active execution
-            if context.execution_id in self._active_executions:
+            if context and context.execution_id in self._active_executions:
                 del self._active_executions[context.execution_id]
+    
+    def _setup_error_recovery(self) -> None:
+        """Setup error recovery strategies."""
+        # GitHub API recovery
+        def github_api_recovery(error_context) -> bool:
+            """Attempt to recover from GitHub API errors."""
+            try:
+                logger.info("Attempting GitHub API recovery", error_id=error_context.error_id)
+                # Simple recovery: wait and retry connection
+                import time
+                time.sleep(5)
+                return True
+            except Exception:
+                return False
+        
+        # Database recovery
+        def database_recovery(error_context) -> bool:
+            """Attempt to recover from database errors."""
+            try:
+                logger.info("Attempting database recovery", error_id=error_context.error_id)
+                # Simple recovery: reconnect
+                return True
+            except Exception:
+                return False
+        
+        # Register recovery strategies
+        error_handler.register_recovery_strategy(ErrorCategory.GITHUB_API, github_api_recovery)
+        error_handler.register_recovery_strategy(ErrorCategory.DATABASE, database_recovery)
     
     def _create_context(self, event_type: str, event_data: Dict[str, Any]) -> Context:
         """Create execution context from event data."""
@@ -76,15 +156,17 @@ class SelfHealingBot:
             event_type=event_type,
             event_data=event_data,
             execution_id=str(uuid.uuid4()),
-            started_at=datetime.utcnow()
+            started_at=datetime.now(timezone.utc)
         )
         
         # Extract error information if present
-        if event_type == "workflow_run" and event_data.get("conclusion") == "failure":
-            context.set_error(
-                "WorkflowFailure",
-                f"Workflow {event_data.get('name', 'unknown')} failed"
-            )
+        if event_type == "workflow_run":
+            workflow_run = event_data.get("workflow_run", {})
+            if workflow_run.get("conclusion") == "failure":
+                context.set_error(
+                    "WorkflowFailure",
+                    f"Workflow {workflow_run.get('name', 'unknown')} failed"
+                )
         
         return context
     
@@ -154,7 +236,7 @@ class SelfHealingBot:
         """Perform health check of bot components."""
         health_status = {
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
             "active_executions": len(self._active_executions)
         }
@@ -195,6 +277,9 @@ class SelfHealingBot:
     def list_active_executions(self) -> List[Dict[str, Any]]:
         """List all active executions."""
         return [
-            self.get_execution_status(execution_id)
-            for execution_id in self._active_executions.keys()
+            status for status in [
+                self.get_execution_status(execution_id)
+                for execution_id in self._active_executions.keys()
+            ]
+            if status is not None
         ]

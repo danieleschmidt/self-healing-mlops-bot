@@ -157,7 +157,7 @@ class TestFailurePlaybook(Playbook):
     def should_trigger(self, context: Context) -> bool:
         return (
             context.event_type == "workflow_run" and
-            context.event_data.get("conclusion") == "failure"
+            context.event_data.get("workflow_run", {}).get("conclusion") == "failure"
         )
     
     @Action(order=1)
