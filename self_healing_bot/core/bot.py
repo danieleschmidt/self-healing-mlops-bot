@@ -170,19 +170,29 @@ class SelfHealingBot:
         
         return context
     
+    @performance_optimizer.cached(ttl=300, key_func=lambda self, context: f"detect_issues:{context.repo_full_name}:{context.event_type}:{hash(str(context.event_data))}")
     async def _detect_issues(self, context: Context) -> List[Dict[str, Any]]:
-        """Detect issues using registered detectors."""
+        """Detect issues using registered detectors with performance optimization."""
         issues = []
         
         # Get available detectors
         detectors = self.detector_registry.get_detectors_for_event(context.event_type)
         
-        for detector in detectors:
+        # Execute detectors concurrently for better performance
+        async def run_detector(detector):
             try:
-                detector_issues = await detector.detect(context)
-                issues.extend(detector_issues)
+                return await detector.detect(context)
             except Exception as e:
                 logger.exception(f"Error running detector {detector.__class__.__name__}: {e}")
+                return []
+        
+        # Run all detectors concurrently
+        detector_tasks = [run_detector(detector) for detector in detectors]
+        results = await asyncio.gather(*detector_tasks, return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, list):
+                issues.extend(result)
         
         return issues
     
