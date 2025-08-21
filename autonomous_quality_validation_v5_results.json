@@ -1,0 +1,108 @@
+{
+  "overall_score": 0.625,
+  "validations_passed": 5,
+  "validations_failed": 3,
+  "critical_issues": [
+    {
+      "gate": "syntax_validation",
+      "error": "Syntax errors in 8 files"
+    }
+  ],
+  "warnings": [],
+  "detailed_results": {
+    "code_structure_validation": {
+      "passed": true,
+      "details": "Found 140 Python files with proper structure",
+      "metrics": {
+        "python_files": 140,
+        "directories": 10,
+        "structure_score": 1.0
+      }
+    },
+    "import_validation": {
+      "passed": true,
+      "details": "All 8 critical imports successful",
+      "metrics": {
+        "successful_imports": 8,
+        "failed_imports": 0
+      }
+    },
+    "syntax_validation": {
+      "passed": false,
+      "error": "Syntax errors in 8 files",
+      "critical": true,
+      "details": "self_healing_bot/actions/intelligent_repairs.py: unmatched ')' (line 572); self_healing_bot/core/emergent_ai_orchestrator.py: 'await' outside async function (line 386); self_healing_bot/performance/database_optimization.py: unexpected character after line continuation character (line 323); self_healing_bot/performance/memory_management.py: unexpected character after line continuation character (line 142); self_healing_bot/performance/profiler.py: f-string: valid expression required before '}' (line 499)"
+    },
+    "basic_functionality_test": {
+      "passed": false,
+      "details": "Basic functionality tests: 0/2 passed",
+      "test_results": [
+        "\u274c Basic operations test failed: name 'np' is not defined",
+        "\u274c Data operations test failed: name 'np' is not defined"
+      ],
+      "metrics": {
+        "success_rate": 0.0,
+        "tests_passed": 0,
+        "total_tests": 2
+      }
+    },
+    "integration_validation": {
+      "passed": false,
+      "details": "Integration tests: 1/2 passed",
+      "integration_results": [
+        "\u274c Component integration test failed: asyncio.run() cannot be called from a running event loop",
+        "\u2705 Configuration integration test passed"
+      ],
+      "metrics": {
+        "integration_success_rate": 0.5,
+        "tests_passed": 1,
+        "total_tests": 2
+      }
+    },
+    "security_validation": {
+      "passed": true,
+      "details": "Security validation: 0 issues found",
+      "security_checks": [
+        "\u2705 No obvious hardcoded secrets found",
+        "\u2705 requirements.txt exists and accessible",
+        "\u2705 README.md exists and accessible"
+      ],
+      "warning": null,
+      "metrics": {
+        "security_score": 1.0,
+        "security_issues": 0,
+        "checks_performed": 3
+      }
+    },
+    "performance_baseline": {
+      "passed": true,
+      "details": "Performance tests: 3/3 passed",
+      "performance_results": [
+        "\u2705 Matrix computation: 4.222s",
+        "\u2705 Memory allocation test passed",
+        "\u2705 Async operation: 0.101s"
+      ],
+      "metrics": {
+        "computation_time": 4.221500635147095,
+        "async_time": 0.10062026977539062,
+        "performance_score": 1.0
+      }
+    },
+    "documentation_validation": {
+      "passed": true,
+      "details": "Documentation checks: 4/4 passed",
+      "documentation_results": [
+        "\u2705 Comprehensive README.md found",
+        "\u2705 Found docstrings in 5/5 files",
+        "\u2705 pyproject.toml present",
+        "\u2705 requirements.txt present"
+      ],
+      "metrics": {
+        "documentation_score": 1.0,
+        "files_with_docs": 5,
+        "total_checks": 4
+      }
+    }
+  },
+  "timestamp": "2025-08-20T19:51:11.042559+00:00"
+}
