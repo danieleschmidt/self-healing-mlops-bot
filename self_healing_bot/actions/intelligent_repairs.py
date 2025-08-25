@@ -569,7 +569,7 @@ def retry_on_failure(max_retries=3, base_delay=1.0, max_delay=60.0, backoff_mult
                         
                         # Add decorator to functions with requests calls
                         import re
-                        function_pattern = r'(def\s+\w+\([^)]*\):[^{]*?)(\n\s+.*?requests\.')'
+                        function_pattern = r'(def\s+\w+\([^)]*\):[^{]*?)(\n\s+.*?requests\.)'
                         matches = re.finditer(function_pattern, updated_content, re.DOTALL)
                         
                         for match in matches:

@@ -1044,7 +1044,7 @@ fi
 echo "📦 Rolling back to version: $PREVIOUS_VERSION"
 
 # Update image tag in docker-compose
-sed -i "s/terragon\/self-healing-mlops-bot:latest/terragon\/self-healing-mlops-bot:$PREVIOUS_VERSION/g" docker-compose.prod.yml
+sed -i "s/terragon\\/self-healing-mlops-bot:latest/terragon\\/self-healing-mlops-bot:$PREVIOUS_VERSION/g" docker-compose.prod.yml
 
 # Deploy previous version
 docker-compose -f docker-compose.prod.yml up -d
