@@ -13,7 +13,7 @@ from collections import defaultdict
 
 from ..core.config import config
 from ..monitoring.logging import get_logger, performance_logger
-from ..monitoring.metrics import metrics
+from ..monitoring.metrics import metrics_collector as metrics
 
 logger = get_logger(__name__)
 

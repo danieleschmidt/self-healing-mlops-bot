@@ -109,4 +109,624 @@ class DependencyScanner:
         """Scan Python dependencies using safety."""
         vulnerabilities = []
         
-        try:\n            # Look for requirements.txt or pyproject.toml\n            requirements_files = [\n                project_path / \"requirements.txt\",\n                project_path / \"pyproject.toml\",\n                project_path / \"Pipfile\",\n                project_path / \"setup.py\"\n            ]\n            \n            found_file = None\n            for req_file in requirements_files:\n                if req_file.exists():\n                    found_file = req_file\n                    break\n            \n            if not found_file:\n                logger.info(\"No Python dependency file found\")\n                return vulnerabilities\n            \n            # Try to use safety if available\n            try:\n                result = subprocess.run(\n                    [\"safety\", \"check\", \"--json\", \"--file\", str(found_file)],\n                    capture_output=True,\n                    text=True,\n                    timeout=300\n                )\n                \n                if result.returncode == 0:\n                    # No vulnerabilities found\n                    return vulnerabilities\n                \n                # Parse safety output\n                try:\n                    safety_data = json.loads(result.stdout)\n                    for vuln_data in safety_data:\n                        vulnerability = Vulnerability(\n                            vulnerability_id=f\"safety_{vuln_data.get('id', 'unknown')}\",\n                            title=vuln_data.get('advisory', 'Unknown vulnerability'),\n                            description=vuln_data.get('advisory', ''),\n                            severity=self._map_safety_severity(vuln_data.get('severity', 'medium')),\n                            vulnerability_type=VulnerabilityType.DEPENDENCY,\n                            affected_component=vuln_data.get('package_name'),\n                            affected_version=vuln_data.get('analyzed_version'),\n                            fixed_version=\">\".join(vuln_data.get('vulnerable_versions', [])),\n                            remediation=f\"Update {vuln_data.get('package_name')} to a safe version\",\n                            metadata={\"safety_data\": vuln_data}\n                        )\n                        vulnerabilities.append(vulnerability)\n                        \n                except json.JSONDecodeError:\n                    # Fallback to text parsing\n                    lines = result.stdout.split(\"\\n\")\n                    for line in lines:\n                        if \"vulnerability\" in line.lower():\n                            # Basic vulnerability detection\n                            vulnerability = Vulnerability(\n                                vulnerability_id=hashlib.md5(line.encode()).hexdigest()[:16],\n                                title=\"Dependency vulnerability detected\",\n                                description=line.strip(),\n                                severity=SeverityLevel.MEDIUM,\n                                vulnerability_type=VulnerabilityType.DEPENDENCY\n                            )\n                            vulnerabilities.append(vulnerability)\n                            \n            except (subprocess.TimeoutExpired, FileNotFoundError):\n                # Fallback to manual parsing\n                vulnerabilities.extend(await self._manual_dependency_check(found_file))\n                \n        except Exception as e:\n            logger.error(f\"Python dependency scan error: {e}\")\n        \n        return vulnerabilities\n    \n    def _map_safety_severity(self, safety_severity: str) -> SeverityLevel:\n        \"\"\"Map safety severity to our severity levels.\"\"\"\n        mapping = {\n            \"high\": SeverityLevel.HIGH,\n            \"medium\": SeverityLevel.MEDIUM,\n            \"low\": SeverityLevel.LOW\n        }\n        return mapping.get(safety_severity.lower(), SeverityLevel.MEDIUM)\n    \n    async def _manual_dependency_check(self, requirements_file: Path) -> List[Vulnerability]:\n        \"\"\"Manual dependency vulnerability check using known patterns.\"\"\"\n        vulnerabilities = []\n        \n        try:\n            content = requirements_file.read_text()\n            \n            # Known vulnerable patterns\n            vulnerable_patterns = [\n                (r\"django\\s*[<>=]*\\s*[12]\\.\", \"Django < 3.0 has known vulnerabilities\", SeverityLevel.HIGH),\n                (r\"flask\\s*[<>=]*\\s*0\\.\", \"Flask < 1.0 has known vulnerabilities\", SeverityLevel.MEDIUM),\n                (r\"requests\\s*[<>=]*\\s*2\\.1[0-9]\\.\", \"Requests < 2.20 has known vulnerabilities\", SeverityLevel.MEDIUM),\n                (r\"pillow\\s*[<>=]*\\s*[5-7]\\.\", \"Pillow < 8.0 may have vulnerabilities\", SeverityLevel.LOW),\n                (r\"pyyaml\\s*[<>=]*\\s*[3-5]\\.\", \"PyYAML < 6.0 has vulnerabilities\", SeverityLevel.MEDIUM)\n            ]\n            \n            for pattern, description, severity in vulnerable_patterns:\n                matches = re.finditer(pattern, content, re.IGNORECASE)\n                for match in matches:\n                    vulnerability = Vulnerability(\n                        vulnerability_id=hashlib.md5(f\"{requirements_file}_{match.group()}\".encode()).hexdigest()[:16],\n                        title=\"Potentially vulnerable dependency\",\n                        description=description,\n                        severity=severity,\n                        vulnerability_type=VulnerabilityType.DEPENDENCY,\n                        affected_component=match.group().split()[0],\n                        file_path=str(requirements_file),\n                        remediation=\"Update to latest version\"\n                    )\n                    vulnerabilities.append(vulnerability)\n                    \n        except Exception as e:\n            logger.error(f\"Manual dependency check error: {e}\")\n        \n        return vulnerabilities\n    \n    async def _scan_node_dependencies(self, project_path: Path) -> List[Vulnerability]:\n        \"\"\"Scan Node.js dependencies.\"\"\"\n        vulnerabilities = []\n        \n        package_json = project_path / \"package.json\"\n        if not package_json.exists():\n            return vulnerabilities\n        \n        try:\n            # Try npm audit\n            result = subprocess.run(\n                [\"npm\", \"audit\", \"--json\"],\n                cwd=project_path,\n                capture_output=True,\n                text=True,\n                timeout=300\n            )\n            \n            if result.returncode != 0:\n                try:\n                    audit_data = json.loads(result.stdout)\n                    for vuln_id, vuln_info in audit_data.get(\"vulnerabilities\", {}).items():\n                        vulnerability = Vulnerability(\n                            vulnerability_id=f\"npm_{vuln_id}\",\n                            title=vuln_info.get(\"title\", \"Node.js vulnerability\"),\n                            description=vuln_info.get(\"overview\", \"\"),\n                            severity=self._map_npm_severity(vuln_info.get(\"severity\", \"moderate\")),\n                            vulnerability_type=VulnerabilityType.DEPENDENCY,\n                            affected_component=vuln_info.get(\"module_name\"),\n                            cve_id=vuln_info.get(\"cves\", [])[0] if vuln_info.get(\"cves\") else None,\n                            remediation=vuln_info.get(\"recommendation\", \"Update dependency\"),\n                            references=vuln_info.get(\"references\", [])\n                        )\n                        vulnerabilities.append(vulnerability)\n                        \n                except json.JSONDecodeError:\n                    pass\n                    \n        except (subprocess.TimeoutExpired, FileNotFoundError):\n            logger.warning(\"npm not available for dependency scanning\")\n        \n        return vulnerabilities\n    \n    def _map_npm_severity(self, npm_severity: str) -> SeverityLevel:\n        \"\"\"Map npm severity to our severity levels.\"\"\"\n        mapping = {\n            \"critical\": SeverityLevel.CRITICAL,\n            \"high\": SeverityLevel.HIGH,\n            \"moderate\": SeverityLevel.MEDIUM,\n            \"low\": SeverityLevel.LOW,\n            \"info\": SeverityLevel.INFO\n        }\n        return mapping.get(npm_severity.lower(), SeverityLevel.MEDIUM)\n    \n    async def _scan_docker_dependencies(self, project_path: Path) -> List[Vulnerability]:\n        \"\"\"Scan Docker images for vulnerabilities.\"\"\"\n        vulnerabilities = []\n        \n        dockerfile = project_path / \"Dockerfile\"\n        if not dockerfile.exists():\n            return vulnerabilities\n        \n        try:\n            content = dockerfile.read_text()\n            \n            # Check for vulnerable base images\n            base_image_patterns = [\n                (r\"FROM\\s+ubuntu:1[4-8]\\.\", \"Ubuntu 14-18 have known vulnerabilities\", SeverityLevel.HIGH),\n                (r\"FROM\\s+debian:[7-9]\\.\", \"Debian 7-9 have known vulnerabilities\", SeverityLevel.MEDIUM),\n                (r\"FROM\\s+centos:[5-7]\\.\", \"CentOS 5-7 have known vulnerabilities\", SeverityLevel.MEDIUM),\n                (r\"FROM\\s+alpine:[2-3]\\.[0-9]\", \"Alpine < 3.10 may have vulnerabilities\", SeverityLevel.LOW)\n            ]\n            \n            for pattern, description, severity in base_image_patterns:\n                matches = re.finditer(pattern, content, re.IGNORECASE)\n                for match in matches:\n                    vulnerability = Vulnerability(\n                        vulnerability_id=hashlib.md5(f\"docker_{match.group()}\".encode()).hexdigest()[:16],\n                        title=\"Vulnerable base image\",\n                        description=description,\n                        severity=severity,\n                        vulnerability_type=VulnerabilityType.CONTAINER,\n                        affected_component=match.group().split()[1],\n                        file_path=str(dockerfile),\n                        remediation=\"Update to latest base image\"\n                    )\n                    vulnerabilities.append(vulnerability)\n                    \n        except Exception as e:\n            logger.error(f\"Docker dependency scan error: {e}\")\n        \n        return vulnerabilities\n\n\nclass CodeScanner:\n    \"\"\"Scan source code for security vulnerabilities.\"\"\"\n    \n    def __init__(self):\n        self.security_patterns = [\n            # SQL Injection patterns\n            (r\"execute\\s*\\(.*%.*\\)\", \"Potential SQL injection\", SeverityLevel.HIGH, VulnerabilityType.CODE),\n            (r\"cursor\\.execute\\s*\\([^?]*\\+\", \"SQL injection via string concatenation\", SeverityLevel.HIGH, VulnerabilityType.CODE),\n            \n            # Command injection patterns\n            (r\"os\\.system\\s*\\(\", \"Command injection risk\", SeverityLevel.HIGH, VulnerabilityType.CODE),\n            (r\"subprocess\\.call\\s*\\(\", \"Potential command injection\", SeverityLevel.MEDIUM, VulnerabilityType.CODE),\n            \n            # Crypto issues\n            (r\"md5\\(\\)\", \"MD5 is cryptographically broken\", SeverityLevel.MEDIUM, VulnerabilityType.CODE),\n            (r\"sha1\\(\\)\", \"SHA1 is weak for cryptographic use\", SeverityLevel.MEDIUM, VulnerabilityType.CODE),\n            \n            # Hardcoded secrets\n            (r\"password\\s*=\\s*['\\\"][^'\\\"]{8,}['\\\"]", \"Hardcoded password\", SeverityLevel.HIGH, VulnerabilityType.SECRET),\n            (r\"api_key\\s*=\\s*['\\\"][^'\\\"]{20,}['\\\"]", \"Hardcoded API key\", SeverityLevel.HIGH, VulnerabilityType.SECRET),\n            \n            # File operations\n            (r\"open\\s*\\(.*input\\s*\\(\", \"Path traversal risk\", SeverityLevel.MEDIUM, VulnerabilityType.CODE),\n            \n            # Deserialization\n            (r\"pickle\\.loads\\s*\\(\", \"Unsafe deserialization\", SeverityLevel.HIGH, VulnerabilityType.CODE),\n            (r\"yaml\\.load\\s*\\([^,]*\\)\", \"Unsafe YAML loading\", SeverityLevel.HIGH, VulnerabilityType.CODE),\n            \n            # Debug/Development patterns\n            (r\"app\\.run\\s*\\(.*debug\\s*=\\s*True\", \"Debug mode enabled in production\", SeverityLevel.MEDIUM, VulnerabilityType.CONFIGURATION)\n        ]\n    \n    async def scan_directory(self, directory: Path, extensions: Set[str] = None) -> List[Vulnerability]:\n        \"\"\"Scan directory for code vulnerabilities.\"\"\"\n        if extensions is None:\n            extensions = {\".py\", \".js\", \".ts\", \".java\", \".php\", \".rb\", \".go\"}\n        \n        vulnerabilities = []\n        \n        try:\n            for file_path in directory.rglob(\"*\"):\n                if file_path.is_file() and file_path.suffix in extensions:\n                    file_vulns = await self._scan_file(file_path)\n                    vulnerabilities.extend(file_vulns)\n                    \n        except Exception as e:\n            logger.error(f\"Directory scan error: {e}\")\n        \n        return vulnerabilities\n    \n    async def _scan_file(self, file_path: Path) -> List[Vulnerability]:\n        \"\"\"Scan a single file for vulnerabilities.\"\"\"\n        vulnerabilities = []\n        \n        try:\n            content = file_path.read_text(encoding='utf-8', errors='ignore')\n            lines = content.split('\\n')\n            \n            for line_num, line in enumerate(lines, 1):\n                for pattern, description, severity, vuln_type in self.security_patterns:\n                    matches = re.finditer(pattern, line, re.IGNORECASE)\n                    for match in matches:\n                        vulnerability = Vulnerability(\n                            vulnerability_id=hashlib.md5(f\"{file_path}_{line_num}_{match.group()}\".encode()).hexdigest()[:16],\n                            title=description,\n                            description=f\"{description}: {match.group()}\",\n                            severity=severity,\n                            vulnerability_type=vuln_type,\n                            file_path=str(file_path),\n                            line_number=line_num,\n                            remediation=self._get_remediation_advice(pattern, description),\n                            metadata={\"pattern\": pattern, \"match\": match.group()}\n                        )\n                        vulnerabilities.append(vulnerability)\n                        \n        except Exception as e:\n            logger.error(f\"File scan error for {file_path}: {e}\")\n        \n        return vulnerabilities\n    \n    def _get_remediation_advice(self, pattern: str, description: str) -> str:\n        \"\"\"Get remediation advice for a vulnerability pattern.\"\"\"\n        remediation_map = {\n            \"SQL injection\": \"Use parameterized queries or ORM methods\",\n            \"Command injection\": \"Validate input and use subprocess with shell=False\",\n            \"MD5\": \"Use SHA-256 or stronger hash functions\",\n            \"SHA1\": \"Use SHA-256 or stronger hash functions\",\n            \"Hardcoded\": \"Use environment variables or secure credential storage\",\n            \"Path traversal\": \"Validate file paths and use os.path.join()\",\n            \"Unsafe deserialization\": \"Use safe serialization formats like JSON\",\n            \"Debug mode\": \"Set debug=False in production\"\n        }\n        \n        for key, advice in remediation_map.items():\n            if key.lower() in description.lower():\n                return advice\n        \n        return \"Review code for security best practices\"\n\n\nclass ConfigurationScanner:\n    \"\"\"Scan configuration files for security issues.\"\"\"\n    \n    def __init__(self):\n        self.config_patterns = [\n            # Database configurations\n            (r\"password\\s*[=:]\\s*['\\\"]?\\w+['\\\"]?\", \"Database password in config\", SeverityLevel.HIGH),\n            (r\"host\\s*[=:]\\s*['\\\"]?0\\.0\\.0\\.0['\\\"]?\", \"Binding to all interfaces\", SeverityLevel.MEDIUM),\n            \n            # SSL/TLS configurations\n            (r\"ssl_verify\\s*[=:]\\s*false\", \"SSL verification disabled\", SeverityLevel.HIGH),\n            (r\"verify_ssl\\s*[=:]\\s*false\", \"SSL verification disabled\", SeverityLevel.HIGH),\n            \n            # Debug configurations\n            (r\"debug\\s*[=:]\\s*true\", \"Debug mode enabled\", SeverityLevel.MEDIUM),\n            (r\"log_level\\s*[=:]\\s*debug\", \"Debug logging enabled\", SeverityLevel.LOW),\n            \n            # Default credentials\n            (r\"username\\s*[=:]\\s*['\\\"]?admin['\\\"]?\", \"Default admin username\", SeverityLevel.MEDIUM),\n            (r\"password\\s*[=:]\\s*['\\\"]?(admin|password|123456)['\\\"]?\", \"Default password\", SeverityLevel.HIGH)\n        ]\n    \n    async def scan_configs(self, directory: Path) -> List[Vulnerability]:\n        \"\"\"Scan configuration files for security issues.\"\"\"\n        config_files = [\n            \"*.ini\", \"*.conf\", \"*.config\", \"*.yaml\", \"*.yml\",\n            \"*.json\", \"*.toml\", \"*.env\", \".env*\", \"docker-compose.yml\"\n        ]\n        \n        vulnerabilities = []\n        \n        for pattern in config_files:\n            for file_path in directory.rglob(pattern):\n                if file_path.is_file():\n                    file_vulns = await self._scan_config_file(file_path)\n                    vulnerabilities.extend(file_vulns)\n        \n        return vulnerabilities\n    \n    async def _scan_config_file(self, file_path: Path) -> List[Vulnerability]:\n        \"\"\"Scan a configuration file.\"\"\"\n        vulnerabilities = []\n        \n        try:\n            content = file_path.read_text(encoding='utf-8', errors='ignore')\n            lines = content.split('\\n')\n            \n            for line_num, line in enumerate(lines, 1):\n                for pattern, description, severity in self.config_patterns:\n                    matches = re.finditer(pattern, line, re.IGNORECASE)\n                    for match in matches:\n                        vulnerability = Vulnerability(\n                            vulnerability_id=hashlib.md5(f\"{file_path}_{line_num}_{match.group()}\".encode()).hexdigest()[:16],\n                            title=f\"Configuration issue: {description}\",\n                            description=f\"{description} in {file_path.name}\",\n                            severity=severity,\n                            vulnerability_type=VulnerabilityType.CONFIGURATION,\n                            file_path=str(file_path),\n                            line_number=line_num,\n                            remediation=\"Review and secure configuration\",\n                            metadata={\"pattern\": pattern, \"match\": match.group()}\n                        )\n                        vulnerabilities.append(vulnerability)\n                        \n        except Exception as e:\n            logger.error(f\"Config file scan error for {file_path}: {e}\")\n        \n        return vulnerabilities\n\n\nclass SecurityScanner:\n    \"\"\"Comprehensive security scanner.\"\"\"\n    \n    def __init__(self):\n        self.dependency_scanner = DependencyScanner()\n        self.code_scanner = CodeScanner()\n        self.config_scanner = ConfigurationScanner()\n        self.secret_scanner = secret_scanner\n        self.scan_history: List[ScanResult] = []\n    \n    async def run_comprehensive_scan(self, target_path: Path, scan_types: Optional[List[str]] = None) -> ScanResult:\n        \"\"\"Run comprehensive security scan.\"\"\"\n        if scan_types is None:\n            scan_types = [\"dependencies\", \"code\", \"config\", \"secrets\"]\n        \n        scan_id = f\"scan_{int(time.time())}_{hashlib.md5(str(target_path).encode()).hexdigest()[:8]}\"\n        \n        scan_result = ScanResult(\n            scan_id=scan_id,\n            scan_type=\"comprehensive\",\n            target=str(target_path),\n            started_at=datetime.utcnow(),\n            status=\"running\"\n        )\n        \n        try:\n            all_vulnerabilities = []\n            \n            # Run dependency scan\n            if \"dependencies\" in scan_types:\n                logger.info(f\"Running dependency scan on {target_path}\")\n                dep_vulns = await self.dependency_scanner.scan_dependencies(target_path)\n                all_vulnerabilities.extend(dep_vulns)\n                scan_result.metadata[\"dependencies_scanned\"] = True\n            \n            # Run code scan\n            if \"code\" in scan_types:\n                logger.info(f\"Running code scan on {target_path}\")\n                code_vulns = await self.code_scanner.scan_directory(target_path)\n                all_vulnerabilities.extend(code_vulns)\n                scan_result.metadata[\"code_scanned\"] = True\n            \n            # Run configuration scan\n            if \"config\" in scan_types:\n                logger.info(f\"Running configuration scan on {target_path}\")\n                config_vulns = await self.config_scanner.scan_configs(target_path)\n                all_vulnerabilities.extend(config_vulns)\n                scan_result.metadata[\"config_scanned\"] = True\n            \n            # Run secrets scan\n            if \"secrets\" in scan_types:\n                logger.info(f\"Running secrets scan on {target_path}\")\n                secret_vulns = await self._scan_for_secrets(target_path)\n                all_vulnerabilities.extend(secret_vulns)\n                scan_result.metadata[\"secrets_scanned\"] = True\n            \n            # Process and deduplicate vulnerabilities\n            unique_vulnerabilities = self._deduplicate_vulnerabilities(all_vulnerabilities)\n            scan_result.vulnerabilities = unique_vulnerabilities\n            \n            # Calculate risk scores\n            for vuln in scan_result.vulnerabilities:\n                vuln.risk_score = self._calculate_risk_score(vuln)\n            \n            # Sort by risk score\n            scan_result.vulnerabilities.sort(key=lambda v: v.risk_score, reverse=True)\n            \n            # Generate summary\n            scan_result.summary = self._generate_summary(scan_result.vulnerabilities)\n            \n            scan_result.status = \"completed\"\n            scan_result.completed_at = datetime.utcnow()\n            \n            # Log security events for high/critical vulnerabilities\n            await self._log_high_severity_vulnerabilities(scan_result)\n            \n        except Exception as e:\n            logger.error(f\"Comprehensive scan failed: {e}\")\n            scan_result.status = \"failed\"\n            scan_result.error_message = str(e)\n            scan_result.completed_at = datetime.utcnow()\n        \n        # Store scan result\n        self.scan_history.append(scan_result)\n        \n        # Keep only last 100 scan results\n        if len(self.scan_history) > 100:\n            self.scan_history = self.scan_history[-100:]\n        \n        return scan_result\n    \n    async def _scan_for_secrets(self, target_path: Path) -> List[Vulnerability]:\n        \"\"\"Scan for hardcoded secrets.\"\"\"\n        vulnerabilities = []\n        \n        try:\n            for file_path in target_path.rglob(\"*\"):\n                if file_path.is_file() and file_path.suffix in {\".py\", \".js\", \".java\", \".env\", \".ini\", \".conf\"}:\n                    try:\n                        content = file_path.read_text(encoding='utf-8', errors='ignore')\n                        findings = self.secret_scanner.scan_text(content)\n                        \n                        for finding in findings:\n                            vulnerability = Vulnerability(\n                                vulnerability_id=hashlib.md5(f\"{file_path}_{finding['start']}_{finding['type']}\".encode()).hexdigest()[:16],\n                                title=f\"Secret detected: {finding['type']}\",\n                                description=f\"{finding['type']} found in {file_path.name}\",\n                                severity=SeverityLevel.HIGH,\n                                vulnerability_type=VulnerabilityType.SECRET,\n                                file_path=str(file_path),\n                                line_number=finding['line'],\n                                remediation=\"Move secret to environment variables or secure storage\",\n                                metadata={\"secret_type\": finding['type'], \"finding\": finding}\n                            )\n                            vulnerabilities.append(vulnerability)\n                            \n                    except Exception as e:\n                        logger.debug(f\"Error scanning {file_path} for secrets: {e}\")\n                        \n        except Exception as e:\n            logger.error(f\"Secrets scan error: {e}\")\n        \n        return vulnerabilities\n    \n    def _deduplicate_vulnerabilities(self, vulnerabilities: List[Vulnerability]) -> List[Vulnerability]:\n        \"\"\"Remove duplicate vulnerabilities.\"\"\"\n        seen = set()\n        unique_vulns = []\n        \n        for vuln in vulnerabilities:\n            # Create a hash based on key attributes\n            hash_key = f\"{vuln.title}_{vuln.file_path}_{vuln.line_number}_{vuln.affected_component}\"\n            hash_digest = hashlib.md5(hash_key.encode()).hexdigest()\n            \n            if hash_digest not in seen:\n                seen.add(hash_digest)\n                unique_vulns.append(vuln)\n        \n        return unique_vulns\n    \n    def _calculate_risk_score(self, vulnerability: Vulnerability) -> float:\n        \"\"\"Calculate risk score for vulnerability.\"\"\"\n        # Base score from severity\n        severity_scores = {\n            SeverityLevel.CRITICAL: 10.0,\n            SeverityLevel.HIGH: 7.5,\n            SeverityLevel.MEDIUM: 5.0,\n            SeverityLevel.LOW: 2.5,\n            SeverityLevel.INFO: 1.0\n        }\n        \n        base_score = severity_scores.get(vulnerability.severity, 5.0)\n        \n        # Adjust based on vulnerability type\n        type_multipliers = {\n            VulnerabilityType.SECRET: 1.5,\n            VulnerabilityType.CODE: 1.3,\n            VulnerabilityType.DEPENDENCY: 1.2,\n            VulnerabilityType.CONFIGURATION: 1.1,\n            VulnerabilityType.CONTAINER: 1.0,\n            VulnerabilityType.INFRASTRUCTURE: 1.0,\n            VulnerabilityType.PERMISSION: 0.9\n        }\n        \n        type_multiplier = type_multipliers.get(vulnerability.vulnerability_type, 1.0)\n        \n        # Adjust based on exploitability (if available)\n        exploitability_bonus = vulnerability.exploitability * 2.0\n        \n        risk_score = (base_score * type_multiplier) + exploitability_bonus\n        return min(10.0, risk_score)  # Cap at 10.0\n    \n    def _generate_summary(self, vulnerabilities: List[Vulnerability]) -> Dict[str, int]:\n        \"\"\"Generate vulnerability summary.\"\"\"\n        summary = {\n            \"total\": len(vulnerabilities),\n            \"critical\": 0,\n            \"high\": 0,\n            \"medium\": 0,\n            \"low\": 0,\n            \"info\": 0\n        }\n        \n        for vuln in vulnerabilities:\n            summary[vuln.severity.value] += 1\n        \n        return summary\n    \n    async def _log_high_severity_vulnerabilities(self, scan_result: ScanResult):\n        \"\"\"Log high severity vulnerabilities as security events.\"\"\"\n        high_severity_vulns = [\n            v for v in scan_result.vulnerabilities \n            if v.severity in [SeverityLevel.CRITICAL, SeverityLevel.HIGH]\n        ]\n        \n        for vuln in high_severity_vulns:\n            threat_level = ThreatLevel.CRITICAL if vuln.severity == SeverityLevel.CRITICAL else ThreatLevel.HIGH\n            \n            await security_monitor.log_security_event(\n                SecurityEventType.VULNERABILITY_EXPLOIT,\n                threat_level,\n                details={\n                    \"scan_id\": scan_result.scan_id,\n                    \"vulnerability_id\": vuln.vulnerability_id,\n                    \"title\": vuln.title,\n                    \"severity\": vuln.severity.value,\n                    \"type\": vuln.vulnerability_type.value,\n                    \"file_path\": vuln.file_path,\n                    \"risk_score\": vuln.risk_score\n                }\n            )\n    \n    def get_scan_history(self, limit: int = 10) -> List[ScanResult]:\n        \"\"\"Get recent scan history.\"\"\"\n        return sorted(self.scan_history, key=lambda s: s.started_at, reverse=True)[:limit]\n    \n    def get_vulnerability_stats(self) -> Dict[str, Any]:\n        \"\"\"Get vulnerability statistics.\"\"\"\n        if not self.scan_history:\n            return {\"total_scans\": 0, \"total_vulnerabilities\": 0}\n        \n        latest_scan = self.scan_history[-1]\n        \n        return {\n            \"total_scans\": len(self.scan_history),\n            \"latest_scan_id\": latest_scan.scan_id,\n            \"latest_scan_date\": latest_scan.started_at.isoformat(),\n            \"total_vulnerabilities\": len(latest_scan.vulnerabilities),\n            \"severity_breakdown\": latest_scan.summary,\n            \"high_risk_count\": len([\n                v for v in latest_scan.vulnerabilities \n                if v.severity in [SeverityLevel.CRITICAL, SeverityLevel.HIGH]\n            ])\n        }\n\n\n# Global instance\nsecurity_scanner = SecurityScanner()
+        try:
+            # Look for requirements.txt or pyproject.toml
+            requirements_files = [
+                project_path / "requirements.txt",
+                project_path / "pyproject.toml",
+                project_path / "Pipfile",
+                project_path / "setup.py"
+            ]
+            
+            found_file = None
+            for req_file in requirements_files:
+                if req_file.exists():
+                    found_file = req_file
+                    break
+            
+            if not found_file:
+                logger.info("No Python dependency file found")
+                return vulnerabilities
+            
+            # Try to use safety if available
+            try:
+                result = subprocess.run(
+                    ["safety", "check", "--json", "--file", str(found_file)],
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+                
+                if result.returncode == 0:
+                    # No vulnerabilities found
+                    return vulnerabilities
+                
+                # Parse safety output
+                try:
+                    safety_data = json.loads(result.stdout)
+                    for vuln_data in safety_data:
+                        vulnerability = Vulnerability(
+                            vulnerability_id=f"safety_{vuln_data.get('id', 'unknown')}",
+                            title=vuln_data.get('advisory', 'Unknown vulnerability'),
+                            description=vuln_data.get('advisory', ''),
+                            severity=self._map_safety_severity(vuln_data.get('severity', 'medium')),
+                            vulnerability_type=VulnerabilityType.DEPENDENCY,
+                            affected_component=vuln_data.get('package_name'),
+                            affected_version=vuln_data.get('analyzed_version'),
+                            fixed_version=">=".join(vuln_data.get('vulnerable_versions', [])),
+                            remediation=f"Update {vuln_data.get('package_name')} to a safe version",
+                            metadata={"safety_data": vuln_data}
+                        )
+                        vulnerabilities.append(vulnerability)
+                        
+                except json.JSONDecodeError:
+                    # Fallback to text parsing
+                    lines = result.stdout.split("\n")
+                    for line in lines:
+                        if "vulnerability" in line.lower():
+                            # Basic vulnerability detection
+                            vulnerability = Vulnerability(
+                                vulnerability_id=hashlib.md5(line.encode()).hexdigest()[:16],
+                                title="Dependency vulnerability detected",
+                                description=line.strip(),
+                                severity=SeverityLevel.MEDIUM,
+                                vulnerability_type=VulnerabilityType.DEPENDENCY
+                            )
+                            vulnerabilities.append(vulnerability)
+                            
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                # Fallback to manual parsing
+                vulnerabilities.extend(await self._manual_dependency_check(found_file))
+                
+        except Exception as e:
+            logger.error(f"Python dependency scan error: {e}")
+        
+        return vulnerabilities
+    
+    def _map_safety_severity(self, safety_severity: str) -> SeverityLevel:
+        """Map safety severity to our severity levels."""
+        mapping = {
+            "high": SeverityLevel.HIGH,
+            "medium": SeverityLevel.MEDIUM,
+            "low": SeverityLevel.LOW
+        }
+        return mapping.get(safety_severity.lower(), SeverityLevel.MEDIUM)
+    
+    async def _manual_dependency_check(self, requirements_file: Path) -> List[Vulnerability]:
+        """Manual dependency vulnerability check using known patterns."""
+        vulnerabilities = []
+        
+        try:
+            content = requirements_file.read_text()
+            
+            # Known vulnerable patterns
+            vulnerable_patterns = [
+                (r"django\\s*[<>=]*\\s*[12]\\.", "Django < 3.0 has known vulnerabilities", SeverityLevel.HIGH),
+                (r"flask\\s*[<>=]*\\s*0\\.", "Flask < 1.0 has known vulnerabilities", SeverityLevel.MEDIUM),
+                (r"requests\\s*[<>=]*\\s*2\\.1[0-9]\\.", "Requests < 2.20 has known vulnerabilities", SeverityLevel.MEDIUM),
+                (r"pillow\\s*[<>=]*\\s*[5-7]\\.", "Pillow < 8.0 may have vulnerabilities", SeverityLevel.LOW),
+                (r"pyyaml\\s*[<>=]*\\s*[3-5]\\.", "PyYAML < 6.0 has vulnerabilities", SeverityLevel.MEDIUM)
+            ]
+            
+            for pattern, description, severity in vulnerable_patterns:
+                matches = re.finditer(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    vulnerability = Vulnerability(
+                        vulnerability_id=hashlib.md5(f"{requirements_file}_{match.group()}".encode()).hexdigest()[:16],
+                        title="Potentially vulnerable dependency",
+                        description=description,
+                        severity=severity,
+                        vulnerability_type=VulnerabilityType.DEPENDENCY,
+                        affected_component=match.group().split()[0],
+                        file_path=str(requirements_file),
+                        remediation="Update to latest version"
+                    )
+                    vulnerabilities.append(vulnerability)
+                    
+        except Exception as e:
+            logger.error(f"Manual dependency check error: {e}")
+        
+        return vulnerabilities
+    
+    async def _scan_node_dependencies(self, project_path: Path) -> List[Vulnerability]:
+        """Scan Node.js dependencies."""
+        vulnerabilities = []
+        
+        package_json = project_path / "package.json"
+        if not package_json.exists():
+            return vulnerabilities
+        
+        try:
+            # Try npm audit
+            result = subprocess.run(
+                ["npm", "audit", "--json"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=300
+            )
+            
+            if result.returncode != 0:
+                try:
+                    audit_data = json.loads(result.stdout)
+                    for vuln_id, vuln_info in audit_data.get("vulnerabilities", {}).items():
+                        vulnerability = Vulnerability(
+                            vulnerability_id=f"npm_{vuln_id}",
+                            title=vuln_info.get("title", "Node.js vulnerability"),
+                            description=vuln_info.get("overview", ""),
+                            severity=self._map_npm_severity(vuln_info.get("severity", "moderate")),
+                            vulnerability_type=VulnerabilityType.DEPENDENCY,
+                            affected_component=vuln_info.get("module_name"),
+                            cve_id=vuln_info.get("cves", [])[0] if vuln_info.get("cves") else None,
+                            remediation=vuln_info.get("recommendation", "Update dependency"),
+                            references=vuln_info.get("references", [])
+                        )
+                        vulnerabilities.append(vulnerability)
+                        
+                except json.JSONDecodeError:
+                    pass
+                    
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            logger.warning("npm not available for dependency scanning")
+        
+        return vulnerabilities
+    
+    def _map_npm_severity(self, npm_severity: str) -> SeverityLevel:
+        """Map npm severity to our severity levels."""
+        mapping = {
+            "critical": SeverityLevel.CRITICAL,
+            "high": SeverityLevel.HIGH,
+            "moderate": SeverityLevel.MEDIUM,
+            "low": SeverityLevel.LOW,
+            "info": SeverityLevel.INFO
+        }
+        return mapping.get(npm_severity.lower(), SeverityLevel.MEDIUM)
+    
+    async def _scan_docker_dependencies(self, project_path: Path) -> List[Vulnerability]:
+        """Scan Docker images for vulnerabilities."""
+        vulnerabilities = []
+        
+        dockerfile = project_path / "Dockerfile"
+        if not dockerfile.exists():
+            return vulnerabilities
+        
+        try:
+            content = dockerfile.read_text()
+            
+            # Check for vulnerable base images
+            base_image_patterns = [
+                (r"FROM\\s+ubuntu:1[4-8]\\.", "Ubuntu 14-18 have known vulnerabilities", SeverityLevel.HIGH),
+                (r"FROM\\s+debian:[7-9]\\.", "Debian 7-9 have known vulnerabilities", SeverityLevel.MEDIUM),
+                (r"FROM\\s+centos:[5-7]\\.", "CentOS 5-7 have known vulnerabilities", SeverityLevel.MEDIUM),
+                (r"FROM\\s+alpine:[2-3]\\.[0-9]", "Alpine < 3.10 may have vulnerabilities", SeverityLevel.LOW)
+            ]
+            
+            for pattern, description, severity in base_image_patterns:
+                matches = re.finditer(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    vulnerability = Vulnerability(
+                        vulnerability_id=hashlib.md5(f"docker_{match.group()}".encode()).hexdigest()[:16],
+                        title="Vulnerable base image",
+                        description=description,
+                        severity=severity,
+                        vulnerability_type=VulnerabilityType.CONTAINER,
+                        affected_component=match.group().split()[1],
+                        file_path=str(dockerfile),
+                        remediation="Update to latest base image"
+                    )
+                    vulnerabilities.append(vulnerability)
+                    
+        except Exception as e:
+            logger.error(f"Docker dependency scan error: {e}")
+        
+        return vulnerabilities
+
+
+class CodeScanner:
+    """Scan source code for security vulnerabilities."""
+    
+    def __init__(self):
+        self.security_patterns = [
+            # SQL Injection patterns
+            (r"execute\\s*\\(.*%.*\\)", "Potential SQL injection", SeverityLevel.HIGH, VulnerabilityType.CODE),
+            (r"cursor\\.execute\\s*\\([^?]*\\+", "SQL injection via string concatenation", SeverityLevel.HIGH, VulnerabilityType.CODE),
+            
+            # Command injection patterns
+            (r"os\\.system\\s*\\(", "Command injection risk", SeverityLevel.HIGH, VulnerabilityType.CODE),
+            (r"subprocess\\.call\\s*\\(", "Potential command injection", SeverityLevel.MEDIUM, VulnerabilityType.CODE),
+            
+            # Crypto issues
+            (r"md5\\(\\)", "MD5 is cryptographically broken", SeverityLevel.MEDIUM, VulnerabilityType.CODE),
+            (r"sha1\\(\\)", "SHA1 is weak for cryptographic use", SeverityLevel.MEDIUM, VulnerabilityType.CODE),
+            
+            # Hardcoded secrets
+            (r"password\\s*=\\s*['\"][^'\"]{8,}['\"]", "Hardcoded password", SeverityLevel.HIGH, VulnerabilityType.SECRET),
+            (r"api_key\\s*=\\s*['\"][^'\"]{20,}['\"]", "Hardcoded API key", SeverityLevel.HIGH, VulnerabilityType.SECRET),
+            
+            # File operations
+            (r"open\\s*\\(.*input\\s*\\(", "Path traversal risk", SeverityLevel.MEDIUM, VulnerabilityType.CODE),
+            
+            # Deserialization
+            (r"pickle\\.loads\\s*\\(", "Unsafe deserialization", SeverityLevel.HIGH, VulnerabilityType.CODE),
+            (r"yaml\\.load\\s*\\([^,]*\\)", "Unsafe YAML loading", SeverityLevel.HIGH, VulnerabilityType.CODE),
+            
+            # Debug/Development patterns
+            (r"app\\.run\\s*\\(.*debug\\s*=\\s*True", "Debug mode enabled in production", SeverityLevel.MEDIUM, VulnerabilityType.CONFIGURATION)
+        ]
+    
+    async def scan_directory(self, directory: Path, extensions: Set[str] = None) -> List[Vulnerability]:
+        """Scan directory for code vulnerabilities."""
+        if extensions is None:
+            extensions = {".py", ".js", ".ts", ".java", ".php", ".rb", ".go"}
+        
+        vulnerabilities = []
+        
+        try:
+            for file_path in directory.rglob("*"):
+                if file_path.is_file() and file_path.suffix in extensions:
+                    file_vulns = await self._scan_file(file_path)
+                    vulnerabilities.extend(file_vulns)
+                    
+        except Exception as e:
+            logger.error(f"Directory scan error: {e}")
+        
+        return vulnerabilities
+    
+    async def _scan_file(self, file_path: Path) -> List[Vulnerability]:
+        """Scan a single file for vulnerabilities."""
+        vulnerabilities = []
+        
+        try:
+            content = file_path.read_text(encoding='utf-8', errors='ignore')
+            lines = content.split('\n')
+            
+            for line_num, line in enumerate(lines, 1):
+                for pattern, description, severity, vuln_type in self.security_patterns:
+                    matches = re.finditer(pattern, line, re.IGNORECASE)
+                    for match in matches:
+                        vulnerability = Vulnerability(
+                            vulnerability_id=hashlib.md5(f"{file_path}_{line_num}_{match.group()}".encode()).hexdigest()[:16],
+                            title=description,
+                            description=f"{description}: {match.group()}",
+                            severity=severity,
+                            vulnerability_type=vuln_type,
+                            file_path=str(file_path),
+                            line_number=line_num,
+                            remediation=self._get_remediation_advice(pattern, description),
+                            metadata={"pattern": pattern, "match": match.group()}
+                        )
+                        vulnerabilities.append(vulnerability)
+                        
+        except Exception as e:
+            logger.error(f"File scan error for {file_path}: {e}")
+        
+        return vulnerabilities
+    
+    def _get_remediation_advice(self, pattern: str, description: str) -> str:
+        """Get remediation advice for a vulnerability pattern."""
+        remediation_map = {
+            "SQL injection": "Use parameterized queries or ORM methods",
+            "Command injection": "Validate input and use subprocess with shell=False",
+            "MD5": "Use SHA-256 or stronger hash functions",
+            "SHA1": "Use SHA-256 or stronger hash functions",
+            "Hardcoded": "Use environment variables or secure credential storage",
+            "Path traversal": "Validate file paths and use os.path.join()",
+            "Unsafe deserialization": "Use safe serialization formats like JSON",
+            "Debug mode": "Set debug=False in production"
+        }
+        
+        for key, advice in remediation_map.items():
+            if key.lower() in description.lower():
+                return advice
+        
+        return "Review code for security best practices"
+
+
+class ConfigurationScanner:
+    """Scan configuration files for security issues."""
+    
+    def __init__(self):
+        self.config_patterns = [
+            # Database configurations
+            (r"password\\s*[=:]\\s*['\"]?\\w+['\"]?", "Database password in config", SeverityLevel.HIGH),
+            (r"host\\s*[=:]\\s*['\"]?0\\.0\\.0\\.0['\"]?", "Binding to all interfaces", SeverityLevel.MEDIUM),
+            
+            # SSL/TLS configurations
+            (r"ssl_verify\\s*[=:]\\s*false", "SSL verification disabled", SeverityLevel.HIGH),
+            (r"verify_ssl\\s*[=:]\\s*false", "SSL verification disabled", SeverityLevel.HIGH),
+            
+            # Debug configurations
+            (r"debug\\s*[=:]\\s*true", "Debug mode enabled", SeverityLevel.MEDIUM),
+            (r"log_level\\s*[=:]\\s*debug", "Debug logging enabled", SeverityLevel.LOW),
+            
+            # Default credentials
+            (r"username\\s*[=:]\\s*['\"]?admin['\"]?", "Default admin username", SeverityLevel.MEDIUM),
+            (r"password\\s*[=:]\\s*['\"]?(admin|password|123456)['\"]?", "Default password", SeverityLevel.HIGH)
+        ]
+    
+    async def scan_configs(self, directory: Path) -> List[Vulnerability]:
+        """Scan configuration files for security issues."""
+        config_files = [
+            "*.ini", "*.conf", "*.config", "*.yaml", "*.yml",
+            "*.json", "*.toml", "*.env", ".env*", "docker-compose.yml"
+        ]
+        
+        vulnerabilities = []
+        
+        for pattern in config_files:
+            for file_path in directory.rglob(pattern):
+                if file_path.is_file():
+                    file_vulns = await self._scan_config_file(file_path)
+                    vulnerabilities.extend(file_vulns)
+        
+        return vulnerabilities
+    
+    async def _scan_config_file(self, file_path: Path) -> List[Vulnerability]:
+        """Scan a configuration file."""
+        vulnerabilities = []
+        
+        try:
+            content = file_path.read_text(encoding='utf-8', errors='ignore')
+            lines = content.split('\n')
+            
+            for line_num, line in enumerate(lines, 1):
+                for pattern, description, severity in self.config_patterns:
+                    matches = re.finditer(pattern, line, re.IGNORECASE)
+                    for match in matches:
+                        vulnerability = Vulnerability(
+                            vulnerability_id=hashlib.md5(f"{file_path}_{line_num}_{match.group()}".encode()).hexdigest()[:16],
+                            title=f"Configuration issue: {description}",
+                            description=f"{description} in {file_path.name}",
+                            severity=severity,
+                            vulnerability_type=VulnerabilityType.CONFIGURATION,
+                            file_path=str(file_path),
+                            line_number=line_num,
+                            remediation="Review and secure configuration",
+                            metadata={"pattern": pattern, "match": match.group()}
+                        )
+                        vulnerabilities.append(vulnerability)
+                        
+        except Exception as e:
+            logger.error(f"Config file scan error for {file_path}: {e}")
+        
+        return vulnerabilities
+
+
+class SecurityScanner:
+    """Comprehensive security scanner."""
+    
+    def __init__(self):
+        self.dependency_scanner = DependencyScanner()
+        self.code_scanner = CodeScanner()
+        self.config_scanner = ConfigurationScanner()
+        self.secret_scanner = secret_scanner
+        self.scan_history: List[ScanResult] = []
+    
+    async def run_comprehensive_scan(self, target_path: Path, scan_types: Optional[List[str]] = None) -> ScanResult:
+        """Run comprehensive security scan."""
+        if scan_types is None:
+            scan_types = ["dependencies", "code", "config", "secrets"]
+        
+        scan_id = f"scan_{int(time.time())}_{hashlib.md5(str(target_path).encode()).hexdigest()[:8]}"
+        
+        scan_result = ScanResult(
+            scan_id=scan_id,
+            scan_type="comprehensive",
+            target=str(target_path),
+            started_at=datetime.utcnow(),
+            status="running"
+        )
+        
+        try:
+            all_vulnerabilities = []
+            
+            # Run dependency scan
+            if "dependencies" in scan_types:
+                logger.info(f"Running dependency scan on {target_path}")
+                dep_vulns = await self.dependency_scanner.scan_dependencies(target_path)
+                all_vulnerabilities.extend(dep_vulns)
+                scan_result.metadata["dependencies_scanned"] = True
+            
+            # Run code scan
+            if "code" in scan_types:
+                logger.info(f"Running code scan on {target_path}")
+                code_vulns = await self.code_scanner.scan_directory(target_path)
+                all_vulnerabilities.extend(code_vulns)
+                scan_result.metadata["code_scanned"] = True
+            
+            # Run configuration scan
+            if "config" in scan_types:
+                logger.info(f"Running configuration scan on {target_path}")
+                config_vulns = await self.config_scanner.scan_configs(target_path)
+                all_vulnerabilities.extend(config_vulns)
+                scan_result.metadata["config_scanned"] = True
+            
+            # Run secrets scan
+            if "secrets" in scan_types:
+                logger.info(f"Running secrets scan on {target_path}")
+                secret_vulns = await self._scan_for_secrets(target_path)
+                all_vulnerabilities.extend(secret_vulns)
+                scan_result.metadata["secrets_scanned"] = True
+            
+            # Process and deduplicate vulnerabilities
+            unique_vulnerabilities = self._deduplicate_vulnerabilities(all_vulnerabilities)
+            scan_result.vulnerabilities = unique_vulnerabilities
+            
+            # Calculate risk scores
+            for vuln in scan_result.vulnerabilities:
+                vuln.risk_score = self._calculate_risk_score(vuln)
+            
+            # Sort by risk score
+            scan_result.vulnerabilities.sort(key=lambda v: v.risk_score, reverse=True)
+            
+            # Generate summary
+            scan_result.summary = self._generate_summary(scan_result.vulnerabilities)
+            
+            scan_result.status = "completed"
+            scan_result.completed_at = datetime.utcnow()
+            
+            # Log security events for high/critical vulnerabilities
+            await self._log_high_severity_vulnerabilities(scan_result)
+            
+        except Exception as e:
+            logger.error(f"Comprehensive scan failed: {e}")
+            scan_result.status = "failed"
+            scan_result.error_message = str(e)
+            scan_result.completed_at = datetime.utcnow()
+        
+        # Store scan result
+        self.scan_history.append(scan_result)
+        
+        # Keep only last 100 scan results
+        if len(self.scan_history) > 100:
+            self.scan_history = self.scan_history[-100:]
+        
+        return scan_result
+    
+    async def _scan_for_secrets(self, target_path: Path) -> List[Vulnerability]:
+        """Scan for hardcoded secrets."""
+        vulnerabilities = []
+        
+        try:
+            for file_path in target_path.rglob("*"):
+                if file_path.is_file() and file_path.suffix in {".py", ".js", ".java", ".env", ".ini", ".conf"}:
+                    try:
+                        content = file_path.read_text(encoding='utf-8', errors='ignore')
+                        findings = self.secret_scanner.scan_text(content)
+                        
+                        for finding in findings:
+                            vulnerability = Vulnerability(
+                                vulnerability_id=hashlib.md5(f"{file_path}_{finding['start']}_{finding['type']}".encode()).hexdigest()[:16],
+                                title=f"Secret detected: {finding['type']}",
+                                description=f"{finding['type']} found in {file_path.name}",
+                                severity=SeverityLevel.HIGH,
+                                vulnerability_type=VulnerabilityType.SECRET,
+                                file_path=str(file_path),
+                                line_number=finding['line'],
+                                remediation="Move secret to environment variables or secure storage",
+                                metadata={"secret_type": finding['type'], "finding": finding}
+                            )
+                            vulnerabilities.append(vulnerability)
+                            
+                    except Exception as e:
+                        logger.debug(f"Error scanning {file_path} for secrets: {e}")
+                        
+        except Exception as e:
+            logger.error(f"Secrets scan error: {e}")
+        
+        return vulnerabilities
+    
+    def _deduplicate_vulnerabilities(self, vulnerabilities: List[Vulnerability]) -> List[Vulnerability]:
+        """Remove duplicate vulnerabilities."""
+        seen = set()
+        unique_vulns = []
+        
+        for vuln in vulnerabilities:
+            # Create a hash based on key attributes
+            hash_key = f"{vuln.title}_{vuln.file_path}_{vuln.line_number}_{vuln.affected_component}"
+            hash_digest = hashlib.md5(hash_key.encode()).hexdigest()
+            
+            if hash_digest not in seen:
+                seen.add(hash_digest)
+                unique_vulns.append(vuln)
+        
+        return unique_vulns
+    
+    def _calculate_risk_score(self, vulnerability: Vulnerability) -> float:
+        """Calculate risk score for vulnerability."""
+        # Base score from severity
+        severity_scores = {
+            SeverityLevel.CRITICAL: 10.0,
+            SeverityLevel.HIGH: 7.5,
+            SeverityLevel.MEDIUM: 5.0,
+            SeverityLevel.LOW: 2.5,
+            SeverityLevel.INFO: 1.0
+        }
+        
+        base_score = severity_scores.get(vulnerability.severity, 5.0)
+        
+        # Adjust based on vulnerability type
+        type_multipliers = {
+            VulnerabilityType.SECRET: 1.5,
+            VulnerabilityType.CODE: 1.3,
+            VulnerabilityType.DEPENDENCY: 1.2,
+            VulnerabilityType.CONFIGURATION: 1.1,
+            VulnerabilityType.CONTAINER: 1.0,
+            VulnerabilityType.INFRASTRUCTURE: 1.0,
+            VulnerabilityType.PERMISSION: 0.9
+        }
+        
+        type_multiplier = type_multipliers.get(vulnerability.vulnerability_type, 1.0)
+        
+        # Adjust based on exploitability (if available)
+        exploitability_bonus = vulnerability.exploitability * 2.0
+        
+        risk_score = (base_score * type_multiplier) + exploitability_bonus
+        return min(10.0, risk_score)  # Cap at 10.0
+    
+    def _generate_summary(self, vulnerabilities: List[Vulnerability]) -> Dict[str, int]:
+        """Generate vulnerability summary."""
+        summary = {
+            "total": len(vulnerabilities),
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "info": 0
+        }
+        
+        for vuln in vulnerabilities:
+            summary[vuln.severity.value] += 1
+        
+        return summary
+    
+    async def _log_high_severity_vulnerabilities(self, scan_result: ScanResult):
+        """Log high severity vulnerabilities as security events."""
+        high_severity_vulns = [
+            v for v in scan_result.vulnerabilities 
+            if v.severity in [SeverityLevel.CRITICAL, SeverityLevel.HIGH]
+        ]
+        
+        for vuln in high_severity_vulns:
+            threat_level = ThreatLevel.CRITICAL if vuln.severity == SeverityLevel.CRITICAL else ThreatLevel.HIGH
+            
+            await security_monitor.log_security_event(
+                SecurityEventType.VULNERABILITY_EXPLOIT,
+                threat_level,
+                details={
+                    "scan_id": scan_result.scan_id,
+                    "vulnerability_id": vuln.vulnerability_id,
+                    "title": vuln.title,
+                    "severity": vuln.severity.value,
+                    "type": vuln.vulnerability_type.value,
+                    "file_path": vuln.file_path,
+                    "risk_score": vuln.risk_score
+                }
+            )
+    
+    def get_scan_history(self, limit: int = 10) -> List[ScanResult]:
+        """Get recent scan history."""
+        return sorted(self.scan_history, key=lambda s: s.started_at, reverse=True)[:limit]
+    
+    def get_vulnerability_stats(self) -> Dict[str, Any]:
+        """Get vulnerability statistics."""
+        if not self.scan_history:
+            return {"total_scans": 0, "total_vulnerabilities": 0}
+        
+        latest_scan = self.scan_history[-1]
+        
+        return {
+            "total_scans": len(self.scan_history),
+            "latest_scan_id": latest_scan.scan_id,
+            "latest_scan_date": latest_scan.started_at.isoformat(),
+            "total_vulnerabilities": len(latest_scan.vulnerabilities),
+            "severity_breakdown": latest_scan.summary,
+            "high_risk_count": len([
+                v for v in latest_scan.vulnerabilities 
+                if v.severity in [SeverityLevel.CRITICAL, SeverityLevel.HIGH]
+            ])
+        }
+
+
+# Global instance
+security_scanner = SecurityScanner()

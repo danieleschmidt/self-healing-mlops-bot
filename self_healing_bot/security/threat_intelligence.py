@@ -121,4 +121,562 @@ class ThreatIntelligenceManager:
                 update_interval_hours=12,
                 parser="tor_exit_nodes"
             ),
-            ThreatFeed(\n                feed_id=\"misp_feed\",\n                name=\"MISP Threat Feed\",\n                url=\"https://www.circl.lu/doc/misp/feed-osint/manifest.json\",\n                feed_type=\"json\",\n                update_interval_hours=12,\n                parser=\"misp_feed\"\n            )\n        ]\n        \n        for feed in default_feeds:\n            self.threat_feeds[feed.feed_id] = feed\n    \n    async def update_all_feeds(self):\n        \"\"\"Update all enabled threat intelligence feeds.\"\"\"\n        tasks = []\n        \n        for feed in self.threat_feeds.values():\n            if feed.enabled and self._should_update_feed(feed):\n                task = asyncio.create_task(self._update_feed(feed))\n                tasks.append(task)\n        \n        if tasks:\n            logger.info(f\"Updating {len(tasks)} threat intelligence feeds\")\n            results = await asyncio.gather(*tasks, return_exceptions=True)\n            \n            success_count = sum(1 for result in results if not isinstance(result, Exception))\n            logger.info(f\"Successfully updated {success_count}/{len(tasks)} feeds\")\n    \n    def _should_update_feed(self, feed: ThreatFeed) -> bool:\n        \"\"\"Check if a feed should be updated.\"\"\"\n        if not feed.last_update:\n            return True\n        \n        time_since_update = datetime.utcnow() - feed.last_update\n        return time_since_update.total_seconds() > feed.update_interval_hours * 3600\n    \n    async def _update_feed(self, feed: ThreatFeed):\n        \"\"\"Update a single threat intelligence feed.\"\"\"\n        try:\n            logger.info(f\"Updating threat feed: {feed.name}\")\n            \n            headers = {}\n            if feed.api_key:\n                headers['Authorization'] = f\"Bearer {feed.api_key}\"\n            \n            timeout = aiohttp.ClientTimeout(total=300)  # 5 minutes\n            \n            async with aiohttp.ClientSession(timeout=timeout) as session:\n                async with session.get(feed.url, headers=headers) as response:\n                    if response.status != 200:\n                        raise Exception(f\"HTTP {response.status}: {await response.text()}\")\n                    \n                    content = await response.text()\n                    \n                    # Parse feed based on type\n                    indicators = await self._parse_feed_content(feed, content)\n                    \n                    # Add indicators to database\n                    added_count = 0\n                    updated_count = 0\n                    \n                    for indicator in indicators:\n                        if await self._add_or_update_indicator(indicator):\n                            added_count += 1\n                        else:\n                            updated_count += 1\n                    \n                    feed.last_update = datetime.utcnow()\n                    \n                    logger.info(f\"Updated {feed.name}: {added_count} new, {updated_count} updated indicators\")\n                    \n                    # Log security event\n                    await security_monitor.log_security_event(\n                        SecurityEventType.POLICY_VIOLATION,  # Using existing event type\n                        ThreatLevel.LOW,\n                        details={\n                            \"action\": \"threat_feed_updated\",\n                            \"feed_name\": feed.name,\n                            \"indicators_added\": added_count,\n                            \"indicators_updated\": updated_count\n                        }\n                    )\n                    \n        except Exception as e:\n            logger.error(f\"Failed to update threat feed {feed.name}: {e}\")\n            audit_logger.log_security_event(\n                \"threat_feed_update_failed\", \"warning\",\n                {\"feed_name\": feed.name, \"error\": str(e)}\n            )\n    \n    async def _parse_feed_content(self, feed: ThreatFeed, content: str) -> List[ThreatIntelligence]:\n        \"\"\"Parse feed content based on feed type and parser.\"\"\"\n        try:\n            if feed.parser == \"abuse_ch_malware\":\n                return await self._parse_abuse_ch_malware(content)\n            elif feed.parser == \"abuse_ch_feodo\":\n                return await self._parse_abuse_ch_feodo(content)\n            elif feed.parser == \"tor_exit_nodes\":\n                return await self._parse_tor_exit_nodes(content)\n            elif feed.parser == \"misp_feed\":\n                return await self._parse_misp_feed(content)\n            else:\n                return await self._parse_generic_feed(feed, content)\n                \n        except Exception as e:\n            logger.error(f\"Failed to parse feed {feed.name}: {e}\")\n            return []\n    \n    async def _parse_abuse_ch_malware(self, content: str) -> List[ThreatIntelligence]:\n        \"\"\"Parse Abuse.ch malware feed.\"\"\"\n        indicators = []\n        \n        try:\n            data = json.loads(content)\n            \n            for item in data.get('data', []):\n                if 'sha256_hash' in item:\n                    indicator = ThreatIntelligence(\n                        indicator_id=f\"abuse_ch_{item['sha256_hash']}\",\n                        indicator_type=IndicatorType.FILE_HASH,\n                        indicator_value=item['sha256_hash'],\n                        threat_types={ThreatType.MALWARE},\n                        confidence=0.9,\n                        severity=ThreatLevel.HIGH,\n                        first_seen=datetime.utcnow(),\n                        last_seen=datetime.utcnow(),\n                        source=\"Abuse.ch Malware Bazaar\",\n                        description=f\"Malware: {item.get('signature', 'Unknown')}\",\n                        tags={item.get('signature', '').lower()},\n                        metadata=item\n                    )\n                    indicators.append(indicator)\n                    \n        except json.JSONDecodeError as e:\n            logger.error(f\"Failed to parse Abuse.ch malware feed: {e}\")\n        \n        return indicators\n    \n    async def _parse_abuse_ch_feodo(self, content: str) -> List[ThreatIntelligence]:\n        \"\"\"Parse Abuse.ch Feodo Tracker feed.\"\"\"\n        indicators = []\n        \n        try:\n            data = json.loads(content)\n            \n            for item in data:\n                if 'ip_address' in item:\n                    indicator = ThreatIntelligence(\n                        indicator_id=f\"feodo_{item['ip_address']}\",\n                        indicator_type=IndicatorType.IP_ADDRESS,\n                        indicator_value=item['ip_address'],\n                        threat_types={ThreatType.BOTNET, ThreatType.C2_SERVER},\n                        confidence=0.95,\n                        severity=ThreatLevel.HIGH,\n                        first_seen=datetime.fromisoformat(item.get('first_seen', datetime.utcnow().isoformat())),\n                        last_seen=datetime.fromisoformat(item.get('last_seen', datetime.utcnow().isoformat())),\n                        source=\"Abuse.ch Feodo Tracker\",\n                        description=f\"Feodo botnet C2 server on port {item.get('port', 'unknown')}\",\n                        tags={'feodo', 'botnet', 'c2'},\n                        metadata=item\n                    )\n                    indicators.append(indicator)\n                    \n        except json.JSONDecodeError as e:\n            logger.error(f\"Failed to parse Abuse.ch Feodo feed: {e}\")\n        \n        return indicators\n    \n    async def _parse_tor_exit_nodes(self, content: str) -> List[ThreatIntelligence]:\n        \"\"\"Parse Tor exit nodes list.\"\"\"\n        indicators = []\n        \n        lines = content.strip().split('\\n')\n        for line in lines:\n            ip = line.strip()\n            if ip and self._is_valid_ip(ip):\n                indicator = ThreatIntelligence(\n                    indicator_id=f\"tor_exit_{ip}\",\n                    indicator_type=IndicatorType.IP_ADDRESS,\n                    indicator_value=ip,\n                    threat_types={ThreatType.MALICIOUS_IP},\n                    confidence=0.8,\n                    severity=ThreatLevel.MEDIUM,\n                    first_seen=datetime.utcnow(),\n                    last_seen=datetime.utcnow(),\n                    source=\"Tor Exit Nodes List\",\n                    description=\"Tor exit node IP address\",\n                    tags={'tor', 'exit_node'},\n                    metadata={'tor_exit_node': True}\n                )\n                indicators.append(indicator)\n        \n        return indicators\n    \n    async def _parse_misp_feed(self, content: str) -> List[ThreatIntelligence]:\n        \"\"\"Parse MISP threat feed.\"\"\"\n        indicators = []\n        \n        try:\n            data = json.loads(content)\n            \n            # This is a simplified MISP parser - real implementation would be more complex\n            for event in data.get('events', []):\n                for attribute in event.get('Attribute', []):\n                    indicator_type_map = {\n                        'ip-dst': IndicatorType.IP_ADDRESS,\n                        'ip-src': IndicatorType.IP_ADDRESS,\n                        'domain': IndicatorType.DOMAIN,\n                        'hostname': IndicatorType.DOMAIN,\n                        'url': IndicatorType.URL,\n                        'md5': IndicatorType.FILE_HASH,\n                        'sha1': IndicatorType.FILE_HASH,\n                        'sha256': IndicatorType.FILE_HASH,\n                    }\n                    \n                    attr_type = attribute.get('type')\n                    if attr_type in indicator_type_map:\n                        indicator = ThreatIntelligence(\n                            indicator_id=f\"misp_{attribute.get('uuid', hashlib.md5(attribute.get('value', '').encode()).hexdigest())}\",\n                            indicator_type=indicator_type_map[attr_type],\n                            indicator_value=attribute.get('value'),\n                            threat_types={ThreatType.MALWARE},  # Simplified\n                            confidence=0.8,\n                            severity=self._map_misp_threat_level(event.get('threat_level_id', '3')),\n                            first_seen=datetime.utcnow(),\n                            last_seen=datetime.utcnow(),\n                            source=\"MISP Feed\",\n                            description=attribute.get('comment', ''),\n                            tags=set(tag.get('name', '') for tag in attribute.get('Tag', [])),\n                            metadata={'misp_event_id': event.get('id'), 'attribute': attribute}\n                        )\n                        indicators.append(indicator)\n                        \n        except json.JSONDecodeError as e:\n            logger.error(f\"Failed to parse MISP feed: {e}\")\n        \n        return indicators\n    \n    def _map_misp_threat_level(self, threat_level_id: str) -> ThreatLevel:\n        \"\"\"Map MISP threat level to our threat levels.\"\"\"\n        mapping = {\n            '1': ThreatLevel.HIGH,\n            '2': ThreatLevel.MEDIUM,\n            '3': ThreatLevel.LOW,\n            '4': ThreatLevel.LOW\n        }\n        return mapping.get(threat_level_id, ThreatLevel.MEDIUM)\n    \n    async def _parse_generic_feed(self, feed: ThreatFeed, content: str) -> List[ThreatIntelligence]:\n        \"\"\"Parse generic feed content.\"\"\"\n        indicators = []\n        \n        if feed.feed_type == \"json\":\n            try:\n                data = json.loads(content)\n                # Basic JSON parsing - would need customization per feed\n                if isinstance(data, list):\n                    for item in data:\n                        if isinstance(item, dict) and 'indicator' in item:\n                            # Basic indicator extraction\n                            pass\n            except json.JSONDecodeError:\n                pass\n        \n        return indicators\n    \n    def _is_valid_ip(self, ip_str: str) -> bool:\n        \"\"\"Check if string is a valid IP address.\"\"\"\n        try:\n            ipaddress.ip_address(ip_str)\n            return True\n        except ValueError:\n            return False\n    \n    async def _add_or_update_indicator(self, indicator: ThreatIntelligence) -> bool:\n        \"\"\"Add or update threat indicator. Returns True if new, False if updated.\"\"\"\n        existing_key = f\"{indicator.indicator_type.value}:{indicator.indicator_value}\"\n        \n        if existing_key in self.threat_indicators:\n            # Update existing indicator\n            existing = self.threat_indicators[existing_key]\n            existing.last_seen = indicator.last_seen\n            existing.confidence = max(existing.confidence, indicator.confidence)\n            existing.threat_types.update(indicator.threat_types)\n            existing.tags.update(indicator.tags)\n            existing.references.extend(r for r in indicator.references if r not in existing.references)\n            return False\n        else:\n            # Add new indicator\n            self.threat_indicators[existing_key] = indicator\n            \n            # Add to security monitor\n            await security_monitor.add_threat_indicator(\n                indicator.indicator_type.value,\n                indicator.indicator_value,\n                indicator.severity,\n                indicator.source,\n                indicator.confidence,\n                list(indicator.tags)\n            )\n            \n            return True\n    \n    async def check_ip_reputation(self, ip_address: str) -> Dict[str, Any]:\n        \"\"\"Check IP address reputation.\"\"\"\n        # Check cache first\n        if ip_address in self.ip_reputation_cache:\n            cache_entry = self.ip_reputation_cache[ip_address]\n            cache_time = cache_entry.get('timestamp', datetime.min)\n            if datetime.utcnow() - cache_time < timedelta(hours=self.cache_ttl_hours):\n                return cache_entry['data']\n        \n        reputation = {\n            \"ip\": ip_address,\n            \"is_malicious\": False,\n            \"threat_types\": [],\n            \"confidence\": 0.0,\n            \"sources\": [],\n            \"last_seen\": None,\n            \"tags\": []\n        }\n        \n        # Check against threat indicators\n        indicator_key = f\"{IndicatorType.IP_ADDRESS.value}:{ip_address}\"\n        if indicator_key in self.threat_indicators:\n            indicator = self.threat_indicators[indicator_key]\n            if indicator.active and not indicator.false_positive:\n                reputation.update({\n                    \"is_malicious\": True,\n                    \"threat_types\": [t.value for t in indicator.threat_types],\n                    \"confidence\": indicator.confidence,\n                    \"sources\": [indicator.source],\n                    \"last_seen\": indicator.last_seen.isoformat(),\n                    \"tags\": list(indicator.tags),\n                    \"description\": indicator.description\n                })\n        \n        # Check external reputation services (if configured)\n        external_checks = await self._check_external_ip_reputation(ip_address)\n        if external_checks:\n            if external_checks.get('is_malicious'):\n                reputation['is_malicious'] = True\n                reputation['sources'].extend(external_checks.get('sources', []))\n                reputation['confidence'] = max(reputation['confidence'], external_checks.get('confidence', 0.0))\n        \n        # Cache result\n        self.ip_reputation_cache[ip_address] = {\n            'data': reputation,\n            'timestamp': datetime.utcnow()\n        }\n        \n        return reputation\n    \n    async def _check_external_ip_reputation(self, ip_address: str) -> Optional[Dict[str, Any]]:\n        \"\"\"Check external IP reputation services.\"\"\"\n        # This would integrate with services like VirusTotal, AbuseIPDB, etc.\n        # For now, we'll return None (no external check)\n        return None\n    \n    async def check_domain_reputation(self, domain: str) -> Dict[str, Any]:\n        \"\"\"Check domain reputation.\"\"\"\n        # Check cache first\n        if domain in self.domain_reputation_cache:\n            cache_entry = self.domain_reputation_cache[domain]\n            cache_time = cache_entry.get('timestamp', datetime.min)\n            if datetime.utcnow() - cache_time < timedelta(hours=self.cache_ttl_hours):\n                return cache_entry['data']\n        \n        reputation = {\n            \"domain\": domain,\n            \"is_malicious\": False,\n            \"threat_types\": [],\n            \"confidence\": 0.0,\n            \"sources\": [],\n            \"last_seen\": None,\n            \"tags\": []\n        }\n        \n        # Check against threat indicators\n        indicator_key = f\"{IndicatorType.DOMAIN.value}:{domain}\"\n        if indicator_key in self.threat_indicators:\n            indicator = self.threat_indicators[indicator_key]\n            if indicator.active and not indicator.false_positive:\n                reputation.update({\n                    \"is_malicious\": True,\n                    \"threat_types\": [t.value for t in indicator.threat_types],\n                    \"confidence\": indicator.confidence,\n                    \"sources\": [indicator.source],\n                    \"last_seen\": indicator.last_seen.isoformat(),\n                    \"tags\": list(indicator.tags),\n                    \"description\": indicator.description\n                })\n        \n        # Cache result\n        self.domain_reputation_cache[domain] = {\n            'data': reputation,\n            'timestamp': datetime.utcnow()\n        }\n        \n        return reputation\n    \n    async def check_file_hash_reputation(self, file_hash: str) -> Dict[str, Any]:\n        \"\"\"Check file hash reputation.\"\"\"\n        reputation = {\n            \"hash\": file_hash,\n            \"is_malicious\": False,\n            \"threat_types\": [],\n            \"confidence\": 0.0,\n            \"sources\": [],\n            \"last_seen\": None,\n            \"tags\": []\n        }\n        \n        # Check against threat indicators\n        indicator_key = f\"{IndicatorType.FILE_HASH.value}:{file_hash}\"\n        if indicator_key in self.threat_indicators:\n            indicator = self.threat_indicators[indicator_key]\n            if indicator.active and not indicator.false_positive:\n                reputation.update({\n                    \"is_malicious\": True,\n                    \"threat_types\": [t.value for t in indicator.threat_types],\n                    \"confidence\": indicator.confidence,\n                    \"sources\": [indicator.source],\n                    \"last_seen\": indicator.last_seen.isoformat(),\n                    \"tags\": list(indicator.tags),\n                    \"description\": indicator.description\n                })\n        \n        return reputation\n    \n    def add_custom_indicator(self, indicator_type: IndicatorType, value: str,\n                           threat_types: Set[ThreatType], confidence: float,\n                           description: str = \"\", tags: Set[str] = None) -> str:\n        \"\"\"Add custom threat indicator.\"\"\"\n        indicator_id = f\"custom_{hashlib.md5(f'{indicator_type.value}_{value}'.encode()).hexdigest()[:16]}\"\n        \n        indicator = ThreatIntelligence(\n            indicator_id=indicator_id,\n            indicator_type=indicator_type,\n            indicator_value=value,\n            threat_types=threat_types,\n            confidence=confidence,\n            severity=ThreatLevel.MEDIUM,  # Default\n            first_seen=datetime.utcnow(),\n            last_seen=datetime.utcnow(),\n            source=\"Custom\",\n            description=description,\n            tags=tags or set()\n        )\n        \n        indicator_key = f\"{indicator_type.value}:{value}\"\n        self.threat_indicators[indicator_key] = indicator\n        \n        logger.info(f\"Added custom threat indicator: {indicator_type.value}={value}\")\n        \n        return indicator_id\n    \n    def remove_indicator(self, indicator_type: IndicatorType, value: str) -> bool:\n        \"\"\"Remove threat indicator.\"\"\"\n        indicator_key = f\"{indicator_type.value}:{value}\"\n        \n        if indicator_key in self.threat_indicators:\n            del self.threat_indicators[indicator_key]\n            logger.info(f\"Removed threat indicator: {indicator_type.value}={value}\")\n            return True\n        \n        return False\n    \n    def mark_false_positive(self, indicator_type: IndicatorType, value: str) -> bool:\n        \"\"\"Mark indicator as false positive.\"\"\"\n        indicator_key = f\"{indicator_type.value}:{value}\"\n        \n        if indicator_key in self.threat_indicators:\n            self.threat_indicators[indicator_key].false_positive = True\n            logger.info(f\"Marked false positive: {indicator_type.value}={value}\")\n            return True\n        \n        return False\n    \n    def get_threat_statistics(self) -> Dict[str, Any]:\n        \"\"\"Get threat intelligence statistics.\"\"\"\n        active_indicators = [i for i in self.threat_indicators.values() if i.active and not i.false_positive]\n        \n        stats = {\n            \"total_indicators\": len(self.threat_indicators),\n            \"active_indicators\": len(active_indicators),\n            \"false_positives\": len([i for i in self.threat_indicators.values() if i.false_positive]),\n            \"by_type\": {},\n            \"by_threat_type\": {},\n            \"by_severity\": {},\n            \"feeds_configured\": len(self.threat_feeds),\n            \"feeds_enabled\": len([f for f in self.threat_feeds.values() if f.enabled]),\n            \"last_feed_update\": None\n        }\n        \n        # Count by indicator type\n        for indicator in active_indicators:\n            indicator_type = indicator.indicator_type.value\n            stats[\"by_type\"][indicator_type] = stats[\"by_type\"].get(indicator_type, 0) + 1\n            \n            # Count by threat type\n            for threat_type in indicator.threat_types:\n                threat_type_name = threat_type.value\n                stats[\"by_threat_type\"][threat_type_name] = stats[\"by_threat_type\"].get(threat_type_name, 0) + 1\n            \n            # Count by severity\n            severity = indicator.severity.value\n            stats[\"by_severity\"][severity] = stats[\"by_severity\"].get(severity, 0) + 1\n        \n        # Find most recent feed update\n        feed_updates = [f.last_update for f in self.threat_feeds.values() if f.last_update]\n        if feed_updates:\n            stats[\"last_feed_update\"] = max(feed_updates).isoformat()\n        \n        return stats\n    \n    async def cleanup_old_indicators(self, max_age_days: int = 90):\n        \"\"\"Clean up old threat indicators.\"\"\"\n        cutoff_date = datetime.utcnow() - timedelta(days=max_age_days)\n        \n        old_indicators = [\n            key for key, indicator in self.threat_indicators.items()\n            if indicator.last_seen < cutoff_date\n        ]\n        \n        for key in old_indicators:\n            del self.threat_indicators[key]\n        \n        if old_indicators:\n            logger.info(f\"Cleaned up {len(old_indicators)} old threat indicators\")\n        \n        # Also cleanup caches\n        current_time = datetime.utcnow()\n        \n        # Clean IP reputation cache\n        old_ip_entries = [\n            ip for ip, data in self.ip_reputation_cache.items()\n            if current_time - data['timestamp'] > timedelta(hours=self.cache_ttl_hours * 2)\n        ]\n        \n        for ip in old_ip_entries:\n            del self.ip_reputation_cache[ip]\n        \n        # Clean domain reputation cache\n        old_domain_entries = [\n            domain for domain, data in self.domain_reputation_cache.items()\n            if current_time - data['timestamp'] > timedelta(hours=self.cache_ttl_hours * 2)\n        ]\n        \n        for domain in old_domain_entries:\n            del self.domain_reputation_cache[domain]\n        \n        if old_ip_entries or old_domain_entries:\n            logger.info(f\"Cleaned up {len(old_ip_entries)} IP and {len(old_domain_entries)} domain cache entries\")\n\n\n# Global instance\nthreat_intelligence = ThreatIntelligenceManager()
+            ThreatFeed(
+                feed_id="misp_feed",
+                name="MISP Threat Feed",
+                url="https://www.circl.lu/doc/misp/feed-osint/manifest.json",
+                feed_type="json",
+                update_interval_hours=12,
+                parser="misp_feed"
+            )
+        ]
+        
+        for feed in default_feeds:
+            self.threat_feeds[feed.feed_id] = feed
+    
+    async def update_all_feeds(self):
+        """Update all enabled threat intelligence feeds."""
+        tasks = []
+        
+        for feed in self.threat_feeds.values():
+            if feed.enabled and self._should_update_feed(feed):
+                task = asyncio.create_task(self._update_feed(feed))
+                tasks.append(task)
+        
+        if tasks:
+            logger.info(f"Updating {len(tasks)} threat intelligence feeds")
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            success_count = sum(1 for result in results if not isinstance(result, Exception))
+            logger.info(f"Successfully updated {success_count}/{len(tasks)} feeds")
+    
+    def _should_update_feed(self, feed: ThreatFeed) -> bool:
+        """Check if a feed should be updated."""
+        if not feed.last_update:
+            return True
+        
+        time_since_update = datetime.utcnow() - feed.last_update
+        return time_since_update.total_seconds() > feed.update_interval_hours * 3600
+    
+    async def _update_feed(self, feed: ThreatFeed):
+        """Update a single threat intelligence feed."""
+        try:
+            logger.info(f"Updating threat feed: {feed.name}")
+            
+            headers = {}
+            if feed.api_key:
+                headers['Authorization'] = f"Bearer {feed.api_key}"
+            
+            timeout = aiohttp.ClientTimeout(total=300)  # 5 minutes
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(feed.url, headers=headers) as response:
+                    if response.status != 200:
+                        raise Exception(f"HTTP {response.status}: {await response.text()}")
+                    
+                    content = await response.text()
+                    
+                    # Parse feed based on type
+                    indicators = await self._parse_feed_content(feed, content)
+                    
+                    # Add indicators to database
+                    added_count = 0
+                    updated_count = 0
+                    
+                    for indicator in indicators:
+                        if await self._add_or_update_indicator(indicator):
+                            added_count += 1
+                        else:
+                            updated_count += 1
+                    
+                    feed.last_update = datetime.utcnow()
+                    
+                    logger.info(f"Updated {feed.name}: {added_count} new, {updated_count} updated indicators")
+                    
+                    # Log security event
+                    await security_monitor.log_security_event(
+                        SecurityEventType.POLICY_VIOLATION,  # Using existing event type
+                        ThreatLevel.LOW,
+                        details={
+                            "action": "threat_feed_updated",
+                            "feed_name": feed.name,
+                            "indicators_added": added_count,
+                            "indicators_updated": updated_count
+                        }
+                    )
+                    
+        except Exception as e:
+            logger.error(f"Failed to update threat feed {feed.name}: {e}")
+            audit_logger.log_security_event(
+                "threat_feed_update_failed", "warning",
+                {"feed_name": feed.name, "error": str(e)}
+            )
+    
+    async def _parse_feed_content(self, feed: ThreatFeed, content: str) -> List[ThreatIntelligence]:
+        """Parse feed content based on feed type and parser."""
+        try:
+            if feed.parser == "abuse_ch_malware":
+                return await self._parse_abuse_ch_malware(content)
+            elif feed.parser == "abuse_ch_feodo":
+                return await self._parse_abuse_ch_feodo(content)
+            elif feed.parser == "tor_exit_nodes":
+                return await self._parse_tor_exit_nodes(content)
+            elif feed.parser == "misp_feed":
+                return await self._parse_misp_feed(content)
+            else:
+                return await self._parse_generic_feed(feed, content)
+                
+        except Exception as e:
+            logger.error(f"Failed to parse feed {feed.name}: {e}")
+            return []
+    
+    async def _parse_abuse_ch_malware(self, content: str) -> List[ThreatIntelligence]:
+        """Parse Abuse.ch malware feed."""
+        indicators = []
+        
+        try:
+            data = json.loads(content)
+            
+            for item in data.get('data', []):
+                if 'sha256_hash' in item:
+                    indicator = ThreatIntelligence(
+                        indicator_id=f"abuse_ch_{item['sha256_hash']}",
+                        indicator_type=IndicatorType.FILE_HASH,
+                        indicator_value=item['sha256_hash'],
+                        threat_types={ThreatType.MALWARE},
+                        confidence=0.9,
+                        severity=ThreatLevel.HIGH,
+                        first_seen=datetime.utcnow(),
+                        last_seen=datetime.utcnow(),
+                        source="Abuse.ch Malware Bazaar",
+                        description=f"Malware: {item.get('signature', 'Unknown')}",
+                        tags={item.get('signature', '').lower()},
+                        metadata=item
+                    )
+                    indicators.append(indicator)
+                    
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Abuse.ch malware feed: {e}")
+        
+        return indicators
+    
+    async def _parse_abuse_ch_feodo(self, content: str) -> List[ThreatIntelligence]:
+        """Parse Abuse.ch Feodo Tracker feed."""
+        indicators = []
+        
+        try:
+            data = json.loads(content)
+            
+            for item in data:
+                if 'ip_address' in item:
+                    indicator = ThreatIntelligence(
+                        indicator_id=f"feodo_{item['ip_address']}",
+                        indicator_type=IndicatorType.IP_ADDRESS,
+                        indicator_value=item['ip_address'],
+                        threat_types={ThreatType.BOTNET, ThreatType.C2_SERVER},
+                        confidence=0.95,
+                        severity=ThreatLevel.HIGH,
+                        first_seen=datetime.fromisoformat(item.get('first_seen', datetime.utcnow().isoformat())),
+                        last_seen=datetime.fromisoformat(item.get('last_seen', datetime.utcnow().isoformat())),
+                        source="Abuse.ch Feodo Tracker",
+                        description=f"Feodo botnet C2 server on port {item.get('port', 'unknown')}",
+                        tags={'feodo', 'botnet', 'c2'},
+                        metadata=item
+                    )
+                    indicators.append(indicator)
+                    
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Abuse.ch Feodo feed: {e}")
+        
+        return indicators
+    
+    async def _parse_tor_exit_nodes(self, content: str) -> List[ThreatIntelligence]:
+        """Parse Tor exit nodes list."""
+        indicators = []
+        
+        lines = content.strip().split('\n')
+        for line in lines:
+            ip = line.strip()
+            if ip and self._is_valid_ip(ip):
+                indicator = ThreatIntelligence(
+                    indicator_id=f"tor_exit_{ip}",
+                    indicator_type=IndicatorType.IP_ADDRESS,
+                    indicator_value=ip,
+                    threat_types={ThreatType.MALICIOUS_IP},
+                    confidence=0.8,
+                    severity=ThreatLevel.MEDIUM,
+                    first_seen=datetime.utcnow(),
+                    last_seen=datetime.utcnow(),
+                    source="Tor Exit Nodes List",
+                    description="Tor exit node IP address",
+                    tags={'tor', 'exit_node'},
+                    metadata={'tor_exit_node': True}
+                )
+                indicators.append(indicator)
+        
+        return indicators
+    
+    async def _parse_misp_feed(self, content: str) -> List[ThreatIntelligence]:
+        """Parse MISP threat feed."""
+        indicators = []
+        
+        try:
+            data = json.loads(content)
+            
+            # This is a simplified MISP parser - real implementation would be more complex
+            for event in data.get('events', []):
+                for attribute in event.get('Attribute', []):
+                    indicator_type_map = {
+                        'ip-dst': IndicatorType.IP_ADDRESS,
+                        'ip-src': IndicatorType.IP_ADDRESS,
+                        'domain': IndicatorType.DOMAIN,
+                        'hostname': IndicatorType.DOMAIN,
+                        'url': IndicatorType.URL,
+                        'md5': IndicatorType.FILE_HASH,
+                        'sha1': IndicatorType.FILE_HASH,
+                        'sha256': IndicatorType.FILE_HASH,
+                    }
+                    
+                    attr_type = attribute.get('type')
+                    if attr_type in indicator_type_map:
+                        indicator = ThreatIntelligence(
+                            indicator_id=f"misp_{attribute.get('uuid', hashlib.md5(attribute.get('value', '').encode()).hexdigest())}",
+                            indicator_type=indicator_type_map[attr_type],
+                            indicator_value=attribute.get('value'),
+                            threat_types={ThreatType.MALWARE},  # Simplified
+                            confidence=0.8,
+                            severity=self._map_misp_threat_level(event.get('threat_level_id', '3')),
+                            first_seen=datetime.utcnow(),
+                            last_seen=datetime.utcnow(),
+                            source="MISP Feed",
+                            description=attribute.get('comment', ''),
+                            tags=set(tag.get('name', '') for tag in attribute.get('Tag', [])),
+                            metadata={'misp_event_id': event.get('id'), 'attribute': attribute}
+                        )
+                        indicators.append(indicator)
+                        
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse MISP feed: {e}")
+        
+        return indicators
+    
+    def _map_misp_threat_level(self, threat_level_id: str) -> ThreatLevel:
+        """Map MISP threat level to our threat levels."""
+        mapping = {
+            '1': ThreatLevel.HIGH,
+            '2': ThreatLevel.MEDIUM,
+            '3': ThreatLevel.LOW,
+            '4': ThreatLevel.LOW
+        }
+        return mapping.get(threat_level_id, ThreatLevel.MEDIUM)
+    
+    async def _parse_generic_feed(self, feed: ThreatFeed, content: str) -> List[ThreatIntelligence]:
+        """Parse generic feed content."""
+        indicators = []
+        
+        if feed.feed_type == "json":
+            try:
+                data = json.loads(content)
+                # Basic JSON parsing - would need customization per feed
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and 'indicator' in item:
+                            # Basic indicator extraction
+                            pass
+            except json.JSONDecodeError:
+                pass
+        
+        return indicators
+    
+    def _is_valid_ip(self, ip_str: str) -> bool:
+        """Check if string is a valid IP address."""
+        try:
+            ipaddress.ip_address(ip_str)
+            return True
+        except ValueError:
+            return False
+    
+    async def _add_or_update_indicator(self, indicator: ThreatIntelligence) -> bool:
+        """Add or update threat indicator. Returns True if new, False if updated."""
+        existing_key = f"{indicator.indicator_type.value}:{indicator.indicator_value}"
+        
+        if existing_key in self.threat_indicators:
+            # Update existing indicator
+            existing = self.threat_indicators[existing_key]
+            existing.last_seen = indicator.last_seen
+            existing.confidence = max(existing.confidence, indicator.confidence)
+            existing.threat_types.update(indicator.threat_types)
+            existing.tags.update(indicator.tags)
+            existing.references.extend(r for r in indicator.references if r not in existing.references)
+            return False
+        else:
+            # Add new indicator
+            self.threat_indicators[existing_key] = indicator
+            
+            # Add to security monitor
+            await security_monitor.add_threat_indicator(
+                indicator.indicator_type.value,
+                indicator.indicator_value,
+                indicator.severity,
+                indicator.source,
+                indicator.confidence,
+                list(indicator.tags)
+            )
+            
+            return True
+    
+    async def check_ip_reputation(self, ip_address: str) -> Dict[str, Any]:
+        """Check IP address reputation."""
+        # Check cache first
+        if ip_address in self.ip_reputation_cache:
+            cache_entry = self.ip_reputation_cache[ip_address]
+            cache_time = cache_entry.get('timestamp', datetime.min)
+            if datetime.utcnow() - cache_time < timedelta(hours=self.cache_ttl_hours):
+                return cache_entry['data']
+        
+        reputation = {
+            "ip": ip_address,
+            "is_malicious": False,
+            "threat_types": [],
+            "confidence": 0.0,
+            "sources": [],
+            "last_seen": None,
+            "tags": []
+        }
+        
+        # Check against threat indicators
+        indicator_key = f"{IndicatorType.IP_ADDRESS.value}:{ip_address}"
+        if indicator_key in self.threat_indicators:
+            indicator = self.threat_indicators[indicator_key]
+            if indicator.active and not indicator.false_positive:
+                reputation.update({
+                    "is_malicious": True,
+                    "threat_types": [t.value for t in indicator.threat_types],
+                    "confidence": indicator.confidence,
+                    "sources": [indicator.source],
+                    "last_seen": indicator.last_seen.isoformat(),
+                    "tags": list(indicator.tags),
+                    "description": indicator.description
+                })
+        
+        # Check external reputation services (if configured)
+        external_checks = await self._check_external_ip_reputation(ip_address)
+        if external_checks:
+            if external_checks.get('is_malicious'):
+                reputation['is_malicious'] = True
+                reputation['sources'].extend(external_checks.get('sources', []))
+                reputation['confidence'] = max(reputation['confidence'], external_checks.get('confidence', 0.0))
+        
+        # Cache result
+        self.ip_reputation_cache[ip_address] = {
+            'data': reputation,
+            'timestamp': datetime.utcnow()
+        }
+        
+        return reputation
+    
+    async def _check_external_ip_reputation(self, ip_address: str) -> Optional[Dict[str, Any]]:
+        """Check external IP reputation services."""
+        # This would integrate with services like VirusTotal, AbuseIPDB, etc.
+        # For now, we'll return None (no external check)
+        return None
+    
+    async def check_domain_reputation(self, domain: str) -> Dict[str, Any]:
+        """Check domain reputation."""
+        # Check cache first
+        if domain in self.domain_reputation_cache:
+            cache_entry = self.domain_reputation_cache[domain]
+            cache_time = cache_entry.get('timestamp', datetime.min)
+            if datetime.utcnow() - cache_time < timedelta(hours=self.cache_ttl_hours):
+                return cache_entry['data']
+        
+        reputation = {
+            "domain": domain,
+            "is_malicious": False,
+            "threat_types": [],
+            "confidence": 0.0,
+            "sources": [],
+            "last_seen": None,
+            "tags": []
+        }
+        
+        # Check against threat indicators
+        indicator_key = f"{IndicatorType.DOMAIN.value}:{domain}"
+        if indicator_key in self.threat_indicators:
+            indicator = self.threat_indicators[indicator_key]
+            if indicator.active and not indicator.false_positive:
+                reputation.update({
+                    "is_malicious": True,
+                    "threat_types": [t.value for t in indicator.threat_types],
+                    "confidence": indicator.confidence,
+                    "sources": [indicator.source],
+                    "last_seen": indicator.last_seen.isoformat(),
+                    "tags": list(indicator.tags),
+                    "description": indicator.description
+                })
+        
+        # Cache result
+        self.domain_reputation_cache[domain] = {
+            'data': reputation,
+            'timestamp': datetime.utcnow()
+        }
+        
+        return reputation
+    
+    async def check_file_hash_reputation(self, file_hash: str) -> Dict[str, Any]:
+        """Check file hash reputation."""
+        reputation = {
+            "hash": file_hash,
+            "is_malicious": False,
+            "threat_types": [],
+            "confidence": 0.0,
+            "sources": [],
+            "last_seen": None,
+            "tags": []
+        }
+        
+        # Check against threat indicators
+        indicator_key = f"{IndicatorType.FILE_HASH.value}:{file_hash}"
+        if indicator_key in self.threat_indicators:
+            indicator = self.threat_indicators[indicator_key]
+            if indicator.active and not indicator.false_positive:
+                reputation.update({
+                    "is_malicious": True,
+                    "threat_types": [t.value for t in indicator.threat_types],
+                    "confidence": indicator.confidence,
+                    "sources": [indicator.source],
+                    "last_seen": indicator.last_seen.isoformat(),
+                    "tags": list(indicator.tags),
+                    "description": indicator.description
+                })
+        
+        return reputation
+    
+    def add_custom_indicator(self, indicator_type: IndicatorType, value: str,
+                           threat_types: Set[ThreatType], confidence: float,
+                           description: str = "", tags: Set[str] = None) -> str:
+        """Add custom threat indicator."""
+        indicator_id = f"custom_{hashlib.md5(f'{indicator_type.value}_{value}'.encode()).hexdigest()[:16]}"
+        
+        indicator = ThreatIntelligence(
+            indicator_id=indicator_id,
+            indicator_type=indicator_type,
+            indicator_value=value,
+            threat_types=threat_types,
+            confidence=confidence,
+            severity=ThreatLevel.MEDIUM,  # Default
+            first_seen=datetime.utcnow(),
+            last_seen=datetime.utcnow(),
+            source="Custom",
+            description=description,
+            tags=tags or set()
+        )
+        
+        indicator_key = f"{indicator_type.value}:{value}"
+        self.threat_indicators[indicator_key] = indicator
+        
+        logger.info(f"Added custom threat indicator: {indicator_type.value}={value}")
+        
+        return indicator_id
+    
+    def remove_indicator(self, indicator_type: IndicatorType, value: str) -> bool:
+        """Remove threat indicator."""
+        indicator_key = f"{indicator_type.value}:{value}"
+        
+        if indicator_key in self.threat_indicators:
+            del self.threat_indicators[indicator_key]
+            logger.info(f"Removed threat indicator: {indicator_type.value}={value}")
+            return True
+        
+        return False
+    
+    def mark_false_positive(self, indicator_type: IndicatorType, value: str) -> bool:
+        """Mark indicator as false positive."""
+        indicator_key = f"{indicator_type.value}:{value}"
+        
+        if indicator_key in self.threat_indicators:
+            self.threat_indicators[indicator_key].false_positive = True
+            logger.info(f"Marked false positive: {indicator_type.value}={value}")
+            return True
+        
+        return False
+    
+    def get_threat_statistics(self) -> Dict[str, Any]:
+        """Get threat intelligence statistics."""
+        active_indicators = [i for i in self.threat_indicators.values() if i.active and not i.false_positive]
+        
+        stats = {
+            "total_indicators": len(self.threat_indicators),
+            "active_indicators": len(active_indicators),
+            "false_positives": len([i for i in self.threat_indicators.values() if i.false_positive]),
+            "by_type": {},
+            "by_threat_type": {},
+            "by_severity": {},
+            "feeds_configured": len(self.threat_feeds),
+            "feeds_enabled": len([f for f in self.threat_feeds.values() if f.enabled]),
+            "last_feed_update": None
+        }
+        
+        # Count by indicator type
+        for indicator in active_indicators:
+            indicator_type = indicator.indicator_type.value
+            stats["by_type"][indicator_type] = stats["by_type"].get(indicator_type, 0) + 1
+            
+            # Count by threat type
+            for threat_type in indicator.threat_types:
+                threat_type_name = threat_type.value
+                stats["by_threat_type"][threat_type_name] = stats["by_threat_type"].get(threat_type_name, 0) + 1
+            
+            # Count by severity
+            severity = indicator.severity.value
+            stats["by_severity"][severity] = stats["by_severity"].get(severity, 0) + 1
+        
+        # Find most recent feed update
+        feed_updates = [f.last_update for f in self.threat_feeds.values() if f.last_update]
+        if feed_updates:
+            stats["last_feed_update"] = max(feed_updates).isoformat()
+        
+        return stats
+    
+    async def cleanup_old_indicators(self, max_age_days: int = 90):
+        """Clean up old threat indicators."""
+        cutoff_date = datetime.utcnow() - timedelta(days=max_age_days)
+        
+        old_indicators = [
+            key for key, indicator in self.threat_indicators.items()
+            if indicator.last_seen < cutoff_date
+        ]
+        
+        for key in old_indicators:
+            del self.threat_indicators[key]
+        
+        if old_indicators:
+            logger.info(f"Cleaned up {len(old_indicators)} old threat indicators")
+        
+        # Also cleanup caches
+        current_time = datetime.utcnow()
+        
+        # Clean IP reputation cache
+        old_ip_entries = [
+            ip for ip, data in self.ip_reputation_cache.items()
+            if current_time - data['timestamp'] > timedelta(hours=self.cache_ttl_hours * 2)
+        ]
+        
+        for ip in old_ip_entries:
+            del self.ip_reputation_cache[ip]
+        
+        # Clean domain reputation cache
+        old_domain_entries = [
+            domain for domain, data in self.domain_reputation_cache.items()
+            if current_time - data['timestamp'] > timedelta(hours=self.cache_ttl_hours * 2)
+        ]
+        
+        for domain in old_domain_entries:
+            del self.domain_reputation_cache[domain]
+        
+        if old_ip_entries or old_domain_entries:
+            logger.info(f"Cleaned up {len(old_ip_entries)} IP and {len(old_domain_entries)} domain cache entries")
+
+
+# Global instance
+threat_intelligence = ThreatIntelligenceManager()

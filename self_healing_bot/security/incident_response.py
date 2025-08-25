@@ -1,4 +1,673 @@
 """Automated incident response system."""
 
 import asyncio
-import hashlib\nimport json\nimport time\nfrom typing import Dict, List, Optional, Any, Set, Callable\nfrom datetime import datetime, timedelta\nfrom dataclasses import dataclass, field\nfrom enum import Enum\nimport logging\n\nfrom ..core.config import config\nfrom ..monitoring.logging import get_logger, audit_logger\nfrom .monitoring import SecurityEvent, SecurityEventType, ThreatLevel, security_monitor\nfrom .auth import auth_manager, User, UserRole\nfrom .rate_limiting import rate_limiter\nfrom .threat_intelligence import threat_intelligence, IndicatorType, ThreatType\n\nlogger = get_logger(__name__)\n\n\nclass IncidentSeverity(Enum):\n    \"\"\"Incident severity levels.\"\"\"\n    LOW = \"low\"\n    MEDIUM = \"medium\"\n    HIGH = \"high\"\n    CRITICAL = \"critical\"\n\n\nclass IncidentStatus(Enum):\n    \"\"\"Incident status.\"\"\"\n    OPEN = \"open\"\n    INVESTIGATING = \"investigating\"\n    CONTAINED = \"contained\"\n    ERADICATED = \"eradicated\"\n    RECOVERED = \"recovered\"\n    CLOSED = \"closed\"\n\n\nclass ResponseActionType(Enum):\n    \"\"\"Types of automated response actions.\"\"\"\n    BLOCK_IP = \"block_ip\"\n    DISABLE_USER = \"disable_user\"\n    REVOKE_TOKENS = \"revoke_tokens\"\n    RATE_LIMIT = \"rate_limit\"\n    ALERT_ADMINS = \"alert_admins\"\n    ISOLATE_SYSTEM = \"isolate_system\"\n    BACKUP_DATA = \"backup_data\"\n    PATCH_SYSTEM = \"patch_system\"\n    COLLECT_EVIDENCE = \"collect_evidence\"\n    NOTIFY_EXTERNAL = \"notify_external\"\n\n\n@dataclass\nclass ResponseAction:\n    \"\"\"Automated response action.\"\"\"\n    action_id: str\n    action_type: ResponseActionType\n    parameters: Dict[str, Any]\n    executed_at: Optional[datetime] = None\n    success: bool = False\n    error_message: Optional[str] = None\n    execution_time_ms: Optional[float] = None\n\n\n@dataclass\nclass IncidentTicket:\n    \"\"\"Security incident ticket.\"\"\"\n    incident_id: str\n    title: str\n    description: str\n    severity: IncidentSeverity\n    status: IncidentStatus\n    created_at: datetime\n    updated_at: datetime\n    assigned_to: Optional[str] = None\n    source_events: List[str] = field(default_factory=list)\n    affected_systems: List[str] = field(default_factory=list)\n    indicators_of_compromise: List[Dict[str, str]] = field(default_factory=list)\n    response_actions: List[ResponseAction] = field(default_factory=list)\n    timeline: List[Dict[str, Any]] = field(default_factory=list)\n    lessons_learned: str = \"\"\n    metadata: Dict[str, Any] = field(default_factory=dict)\n\n\n@dataclass\nclass PlaybookRule:\n    \"\"\"Incident response playbook rule.\"\"\"\n    rule_id: str\n    name: str\n    description: str\n    event_types: Set[SecurityEventType]\n    threat_levels: Set[ThreatLevel]\n    conditions: Dict[str, Any] = field(default_factory=dict)\n    actions: List[Dict[str, Any]] = field(default_factory=list)\n    cooldown_minutes: int = 60\n    enabled: bool = True\n    priority: int = 1\n\n\nclass IncidentResponseManager:\n    \"\"\"Automated incident response and management system.\"\"\"\n    \n    def __init__(self):\n        self.active_incidents: Dict[str, IncidentTicket] = {}\n        self.incident_history: List[IncidentTicket] = []\n        self.playbook_rules: Dict[str, PlaybookRule] = {}\n        self.response_actions: Dict[ResponseActionType, Callable] = {}\n        self.rule_execution_history: Dict[str, datetime] = {}  # rule_id -> last_execution\n        \n        # Initialize default playbooks\n        self._initialize_default_playbooks()\n        \n        # Register response actions\n        self._register_response_actions()\n        \n        # Register with security monitor\n        self._register_event_handlers()\n    \n    def _initialize_default_playbooks(self):\n        \"\"\"Initialize default incident response playbooks.\"\"\"\n        default_playbooks = [\n            PlaybookRule(\n                rule_id=\"critical_auth_failure\",\n                name=\"Critical Authentication Failures\",\n                description=\"Respond to critical authentication failures\",\n                event_types={SecurityEventType.AUTHENTICATION_FAILURE},\n                threat_levels={ThreatLevel.CRITICAL},\n                conditions={\"failed_attempts_threshold\": 10},\n                actions=[\n                    {\"type\": ResponseActionType.BLOCK_IP.value, \"params\": {\"duration_minutes\": 60}},\n                    {\"type\": ResponseActionType.ALERT_ADMINS.value, \"params\": {\"priority\": \"high\"}},\n                    {\"type\": ResponseActionType.COLLECT_EVIDENCE.value, \"params\": {}}\n                ],\n                cooldown_minutes=30\n            ),\n            PlaybookRule(\n                rule_id=\"brute_force_attack\",\n                name=\"Brute Force Attack Response\",\n                description=\"Respond to brute force attacks\",\n                event_types={SecurityEventType.BRUTE_FORCE_ATTEMPT},\n                threat_levels={ThreatLevel.HIGH, ThreatLevel.CRITICAL},\n                actions=[\n                    {\"type\": ResponseActionType.BLOCK_IP.value, \"params\": {\"duration_minutes\": 120}},\n                    {\"type\": ResponseActionType.RATE_LIMIT.value, \"params\": {\"factor\": 0.1}},\n                    {\"type\": ResponseActionType.ALERT_ADMINS.value, \"params\": {}}\n                ],\n                cooldown_minutes=15\n            ),\n            PlaybookRule(\n                rule_id=\"data_breach_attempt\",\n                name=\"Data Breach Response\",\n                description=\"Respond to potential data breaches\",\n                event_types={SecurityEventType.DATA_BREACH_ATTEMPT},\n                threat_levels={ThreatLevel.HIGH, ThreatLevel.CRITICAL},\n                actions=[\n                    {\"type\": ResponseActionType.ISOLATE_SYSTEM.value, \"params\": {}},\n                    {\"type\": ResponseActionType.BACKUP_DATA.value, \"params\": {}},\n                    {\"type\": ResponseActionType.ALERT_ADMINS.value, \"params\": {\"priority\": \"critical\"}},\n                    {\"type\": ResponseActionType.NOTIFY_EXTERNAL.value, \"params\": {\"authorities\": True}}\n                ],\n                cooldown_minutes=5\n            ),\n            PlaybookRule(\n                rule_id=\"malware_detected\",\n                name=\"Malware Detection Response\",\n                description=\"Respond to malware detection\",\n                event_types={SecurityEventType.MALWARE_DETECTED},\n                threat_levels={ThreatLevel.HIGH, ThreatLevel.CRITICAL},\n                actions=[\n                    {\"type\": ResponseActionType.ISOLATE_SYSTEM.value, \"params\": {}},\n                    {\"type\": ResponseActionType.COLLECT_EVIDENCE.value, \"params\": {\"forensics\": True}},\n                    {\"type\": ResponseActionType.PATCH_SYSTEM.value, \"params\": {}},\n                    {\"type\": ResponseActionType.ALERT_ADMINS.value, \"params\": {}}\n                ],\n                cooldown_minutes=10\n            ),\n            PlaybookRule(\n                rule_id=\"privilege_escalation\",\n                name=\"Privilege Escalation Response\",\n                description=\"Respond to privilege escalation attempts\",\n                event_types={SecurityEventType.PRIVILEGE_ESCALATION},\n                threat_levels={ThreatLevel.HIGH, ThreatLevel.CRITICAL},\n                actions=[\n                    {\"type\": ResponseActionType.DISABLE_USER.value, \"params\": {\"temporary\": True}},\n                    {\"type\": ResponseActionType.REVOKE_TOKENS.value, \"params\": {}},\n                    {\"type\": ResponseActionType.ALERT_ADMINS.value, \"params\": {\"priority\": \"high\"}},\n                    {\"type\": ResponseActionType.COLLECT_EVIDENCE.value, \"params\": {}}\n                ],\n                cooldown_minutes=5\n            )\n        ]\n        \n        for playbook in default_playbooks:\n            self.playbook_rules[playbook.rule_id] = playbook\n    \n    def _register_response_actions(self):\n        \"\"\"Register automated response action handlers.\"\"\"\n        self.response_actions = {\n            ResponseActionType.BLOCK_IP: self._action_block_ip,\n            ResponseActionType.DISABLE_USER: self._action_disable_user,\n            ResponseActionType.REVOKE_TOKENS: self._action_revoke_tokens,\n            ResponseActionType.RATE_LIMIT: self._action_adjust_rate_limit,\n            ResponseActionType.ALERT_ADMINS: self._action_alert_admins,\n            ResponseActionType.ISOLATE_SYSTEM: self._action_isolate_system,\n            ResponseActionType.BACKUP_DATA: self._action_backup_data,\n            ResponseActionType.PATCH_SYSTEM: self._action_patch_system,\n            ResponseActionType.COLLECT_EVIDENCE: self._action_collect_evidence,\n            ResponseActionType.NOTIFY_EXTERNAL: self._action_notify_external\n        }\n    \n    def _register_event_handlers(self):\n        \"\"\"Register event handlers with security monitor.\"\"\"\n        for event_type in SecurityEventType:\n            security_monitor.register_event_handler(event_type, self._handle_security_event)\n    \n    async def _handle_security_event(self, event: SecurityEvent):\n        \"\"\"Handle incoming security event and trigger response if needed.\"\"\"\n        try:\n            # Find matching playbook rules\n            matching_rules = self._find_matching_rules(event)\n            \n            for rule in matching_rules:\n                # Check cooldown\n                if not self._check_rule_cooldown(rule.rule_id):\n                    continue\n                \n                # Check additional conditions\n                if not await self._check_rule_conditions(rule, event):\n                    continue\n                \n                # Execute automated response\n                await self._execute_playbook(rule, event)\n                \n                # Update rule execution history\n                self.rule_execution_history[rule.rule_id] = datetime.utcnow()\n                \n        except Exception as e:\n            logger.error(f\"Error handling security event {event.event_id}: {e}\")\n    \n    def _find_matching_rules(self, event: SecurityEvent) -> List[PlaybookRule]:\n        \"\"\"Find playbook rules that match the security event.\"\"\"\n        matching_rules = []\n        \n        for rule in self.playbook_rules.values():\n            if not rule.enabled:\n                continue\n            \n            # Check event type\n            if event.event_type not in rule.event_types:\n                continue\n            \n            # Check threat level\n            if event.threat_level not in rule.threat_levels:\n                continue\n            \n            matching_rules.append(rule)\n        \n        # Sort by priority (higher priority first)\n        return sorted(matching_rules, key=lambda r: r.priority, reverse=True)\n    \n    def _check_rule_cooldown(self, rule_id: str) -> bool:\n        \"\"\"Check if rule is not in cooldown period.\"\"\"\n        if rule_id not in self.rule_execution_history:\n            return True\n        \n        rule = self.playbook_rules[rule_id]\n        last_execution = self.rule_execution_history[rule_id]\n        cooldown_expires = last_execution + timedelta(minutes=rule.cooldown_minutes)\n        \n        return datetime.utcnow() > cooldown_expires\n    \n    async def _check_rule_conditions(self, rule: PlaybookRule, event: SecurityEvent) -> bool:\n        \"\"\"Check additional rule conditions.\"\"\"\n        if not rule.conditions:\n            return True\n        \n        # Check failed attempts threshold\n        if \"failed_attempts_threshold\" in rule.conditions:\n            threshold = rule.conditions[\"failed_attempts_threshold\"]\n            if event.source_ip:\n                recent_events = security_monitor.get_recent_events(minutes=60)\n                ip_failures = len([\n                    e for e in recent_events\n                    if e.get('source_ip') == event.source_ip and \n                       e.get('event_type') == SecurityEventType.AUTHENTICATION_FAILURE.value\n                ])\n                if ip_failures < threshold:\n                    return False\n        \n        # Add more condition checks as needed\n        \n        return True\n    \n    async def _execute_playbook(self, rule: PlaybookRule, event: SecurityEvent):\n        \"\"\"Execute automated response playbook.\"\"\"\n        logger.info(f\"Executing playbook rule: {rule.name} for event {event.event_id}\")\n        \n        # Create or update incident\n        incident = await self._create_or_update_incident(rule, event)\n        \n        # Execute response actions\n        for action_config in rule.actions:\n            try:\n                action = await self._execute_response_action(action_config, event, incident)\n                incident.response_actions.append(action)\n                \n                # Add to timeline\n                incident.timeline.append({\n                    \"timestamp\": datetime.utcnow().isoformat(),\n                    \"event\": \"response_action_executed\",\n                    \"action_type\": action.action_type.value,\n                    \"success\": action.success,\n                    \"details\": action.parameters\n                })\n                \n            except Exception as e:\n                logger.error(f\"Failed to execute response action {action_config}: {e}\")\n        \n        # Update incident\n        incident.updated_at = datetime.utcnow()\n        \n        # Log incident response\n        audit_logger.log_security_event(\n            \"incident_response_executed\", \"info\",\n            {\n                \"incident_id\": incident.incident_id,\n                \"rule_name\": rule.name,\n                \"event_id\": event.event_id,\n                \"actions_executed\": len(incident.response_actions)\n            }\n        )\n    \n    async def _create_or_update_incident(self, rule: PlaybookRule, event: SecurityEvent) -> IncidentTicket:\n        \"\"\"Create new incident or update existing one.\"\"\"\n        # Check if there's an existing related incident\n        existing_incident = self._find_related_incident(event)\n        \n        if existing_incident:\n            # Update existing incident\n            existing_incident.source_events.append(event.event_id)\n            existing_incident.updated_at = datetime.utcnow()\n            \n            # Escalate severity if needed\n            if event.threat_level == ThreatLevel.CRITICAL:\n                existing_incident.severity = IncidentSeverity.CRITICAL\n            elif event.threat_level == ThreatLevel.HIGH and existing_incident.severity == IncidentSeverity.MEDIUM:\n                existing_incident.severity = IncidentSeverity.HIGH\n            \n            return existing_incident\n        \n        # Create new incident\n        incident_id = f\"INC_{int(time.time())}_{hashlib.md5(event.event_id.encode()).hexdigest()[:8]}\"\n        \n        # Map threat level to incident severity\n        severity_mapping = {\n            ThreatLevel.CRITICAL: IncidentSeverity.CRITICAL,\n            ThreatLevel.HIGH: IncidentSeverity.HIGH,\n            ThreatLevel.MEDIUM: IncidentSeverity.MEDIUM,\n            ThreatLevel.LOW: IncidentSeverity.LOW\n        }\n        \n        incident = IncidentTicket(\n            incident_id=incident_id,\n            title=f\"Security Incident: {rule.name}\",\n            description=f\"Automated incident created for {event.event_type.value} event\",\n            severity=severity_mapping.get(event.threat_level, IncidentSeverity.MEDIUM),\n            status=IncidentStatus.INVESTIGATING,\n            created_at=datetime.utcnow(),\n            updated_at=datetime.utcnow(),\n            source_events=[event.event_id],\n            affected_systems=[event.endpoint] if event.endpoint else [],\n            timeline=[\n                {\n                    \"timestamp\": datetime.utcnow().isoformat(),\n                    \"event\": \"incident_created\",\n                    \"details\": {\"trigger_event\": event.event_id, \"playbook_rule\": rule.name}\n                }\n            ]\n        )\n        \n        # Add indicators of compromise\n        if event.source_ip:\n            incident.indicators_of_compromise.append({\n                \"type\": \"ip\",\n                \"value\": event.source_ip,\n                \"source\": \"event_data\"\n            })\n        \n        # Store incident\n        self.active_incidents[incident_id] = incident\n        \n        logger.info(f\"Created incident {incident_id} for event {event.event_id}\")\n        \n        return incident\n    \n    def _find_related_incident(self, event: SecurityEvent) -> Optional[IncidentTicket]:\n        \"\"\"Find existing incident related to this event.\"\"\"\n        # Look for incidents from same IP in last 4 hours\n        if event.source_ip:\n            cutoff_time = datetime.utcnow() - timedelta(hours=4)\n            \n            for incident in self.active_incidents.values():\n                if incident.created_at < cutoff_time:\n                    continue\n                \n                # Check if same IP is in indicators\n                for ioc in incident.indicators_of_compromise:\n                    if ioc.get(\"type\") == \"ip\" and ioc.get(\"value\") == event.source_ip:\n                        return incident\n        \n        return None\n    \n    async def _execute_response_action(self, action_config: Dict[str, Any], \n                                     event: SecurityEvent, incident: IncidentTicket) -> ResponseAction:\n        \"\"\"Execute a single response action.\"\"\"\n        action_type = ResponseActionType(action_config[\"type\"])\n        parameters = action_config.get(\"params\", {})\n        \n        # Add event and incident context\n        parameters.update({\n            \"event_id\": event.event_id,\n            \"incident_id\": incident.incident_id,\n            \"source_ip\": event.source_ip,\n            \"user_id\": event.user_id\n        })\n        \n        action = ResponseAction(\n            action_id=f\"{action_type.value}_{int(time.time())}_{hashlib.md5(json.dumps(parameters, sort_keys=True).encode()).hexdigest()[:8]}\",\n            action_type=action_type,\n            parameters=parameters\n        )\n        \n        start_time = time.time()\n        \n        try:\n            # Execute the action\n            handler = self.response_actions.get(action_type)\n            if handler:\n                await handler(parameters)\n                action.success = True\n            else:\n                raise Exception(f\"No handler for action type: {action_type.value}\")\n                \n        except Exception as e:\n            action.error_message = str(e)\n            action.success = False\n            logger.error(f\"Response action failed: {action_type.value} - {e}\")\n        \n        action.executed_at = datetime.utcnow()\n        action.execution_time_ms = (time.time() - start_time) * 1000\n        \n        return action\n    \n    # Response action implementations\n    async def _action_block_ip(self, params: Dict[str, Any]):\n        \"\"\"Block IP address.\"\"\"\n        ip = params.get(\"source_ip\")\n        duration_minutes = params.get(\"duration_minutes\", 60)\n        reason = f\"Automated block: incident {params.get('incident_id')}\"\n        \n        if ip:\n            await rate_limiter.unblock_client(ip)  # First unblock to reset\n            # Then block by adding to security monitor\n            await security_monitor.block_ip(ip, reason)\n            \n            # Also add to threat intelligence\n            threat_intelligence.add_custom_indicator(\n                IndicatorType.IP_ADDRESS,\n                ip,\n                {ThreatType.MALICIOUS_IP},\n                0.8,\n                f\"Blocked by incident response: {reason}\",\n                {\"automated_block\", \"incident_response\"}\n            )\n            \n            logger.info(f\"Blocked IP {ip} for {duration_minutes} minutes\")\n    \n    async def _action_disable_user(self, params: Dict[str, Any]):\n        \"\"\"Disable user account.\"\"\"\n        user_id = params.get(\"user_id\")\n        temporary = params.get(\"temporary\", True)\n        \n        if user_id:\n            user = auth_manager.get_user_by_id(user_id)\n            if user:\n                user.is_active = False\n                if temporary:\n                    user.locked_until = datetime.utcnow() + timedelta(hours=1)\n                \n                logger.info(f\"Disabled user {user.username} ({'temporarily' if temporary else 'permanently'})\")\n    \n    async def _action_revoke_tokens(self, params: Dict[str, Any]):\n        \"\"\"Revoke user tokens.\"\"\"\n        user_id = params.get(\"user_id\")\n        \n        if user_id:\n            auth_manager.revoke_user_tokens(user_id)\n            logger.info(f\"Revoked all tokens for user {user_id}\")\n    \n    async def _action_adjust_rate_limit(self, params: Dict[str, Any]):\n        \"\"\"Adjust rate limiting.\"\"\"\n        ip = params.get(\"source_ip\")\n        factor = params.get(\"factor\", 0.5)  # Reduce by 50%\n        \n        if ip:\n            # This would implement dynamic rate limit adjustment\n            logger.info(f\"Adjusted rate limit for {ip} by factor {factor}\")\n    \n    async def _action_alert_admins(self, params: Dict[str, Any]):\n        \"\"\"Alert system administrators.\"\"\"\n        priority = params.get(\"priority\", \"medium\")\n        incident_id = params.get(\"incident_id\")\n        \n        # Get admin users\n        admin_users = [user for user in auth_manager.users.values() if user.role == UserRole.ADMIN]\n        \n        alert_message = f\"Security incident {incident_id} requires attention (Priority: {priority})\"\n        \n        # In a real implementation, this would send notifications via email, Slack, etc.\n        for admin in admin_users:\n            logger.warning(f\"ALERT for {admin.username}: {alert_message}\")\n        \n        # Log the alert\n        audit_logger.log_security_event(\n            \"admin_alert_sent\", priority,\n            {\"incident_id\": incident_id, \"recipients\": [admin.username for admin in admin_users]}\n        )\n    \n    async def _action_isolate_system(self, params: Dict[str, Any]):\n        \"\"\"Isolate affected system.\"\"\"\n        # This would implement system isolation logic\n        logger.critical(f\"SYSTEM ISOLATION TRIGGERED: {params}\")\n        \n        # In production, this might:\n        # - Disconnect from network\n        # - Stop non-essential services\n        # - Enable emergency mode\n    \n    async def _action_backup_data(self, params: Dict[str, Any]):\n        \"\"\"Create emergency data backup.\"\"\"\n        # This would implement emergency backup logic\n        logger.info(f\"EMERGENCY BACKUP INITIATED: {params}\")\n        \n        # In production, this might:\n        # - Snapshot databases\n        # - Archive critical files\n        # - Store in secure location\n    \n    async def _action_patch_system(self, params: Dict[str, Any]):\n        \"\"\"Apply security patches.\"\"\"\n        # This would implement automated patching\n        logger.info(f\"AUTOMATED PATCHING INITIATED: {params}\")\n        \n        # In production, this might:\n        # - Download security updates\n        # - Apply patches\n        # - Restart services if needed\n    \n    async def _action_collect_evidence(self, params: Dict[str, Any]):\n        \"\"\"Collect forensic evidence.\"\"\"\n        forensics = params.get(\"forensics\", False)\n        \n        logger.info(f\"EVIDENCE COLLECTION INITIATED (forensics={forensics}): {params}\")\n        \n        # In production, this might:\n        # - Capture memory dumps\n        # - Save log files\n        # - Document system state\n        # - Preserve network traffic\n    \n    async def _action_notify_external(self, params: Dict[str, Any]):\n        \"\"\"Notify external parties.\"\"\"\n        authorities = params.get(\"authorities\", False)\n        \n        if authorities:\n            logger.critical(f\"EXTERNAL NOTIFICATION (AUTHORITIES) TRIGGERED: {params}\")\n        else:\n            logger.warning(f\"EXTERNAL NOTIFICATION TRIGGERED: {params}\")\n        \n        # In production, this might:\n        # - Send notifications to SOC\n        # - Alert law enforcement if required\n        # - Notify business partners\n        # - Update threat intelligence providers\n    \n    def add_playbook_rule(self, rule: PlaybookRule):\n        \"\"\"Add custom playbook rule.\"\"\"\n        self.playbook_rules[rule.rule_id] = rule\n        logger.info(f\"Added playbook rule: {rule.name}\")\n    \n    def remove_playbook_rule(self, rule_id: str) -> bool:\n        \"\"\"Remove playbook rule.\"\"\"\n        if rule_id in self.playbook_rules:\n            del self.playbook_rules[rule_id]\n            logger.info(f\"Removed playbook rule: {rule_id}\")\n            return True\n        return False\n    \n    def get_incident(self, incident_id: str) -> Optional[IncidentTicket]:\n        \"\"\"Get incident by ID.\"\"\"\n        return self.active_incidents.get(incident_id)\n    \n    def list_active_incidents(self) -> List[IncidentTicket]:\n        \"\"\"List all active incidents.\"\"\"\n        return list(self.active_incidents.values())\n    \n    def close_incident(self, incident_id: str, resolution_notes: str = \"\"):\n        \"\"\"Close an incident.\"\"\"\n        if incident_id in self.active_incidents:\n            incident = self.active_incidents[incident_id]\n            incident.status = IncidentStatus.CLOSED\n            incident.updated_at = datetime.utcnow()\n            incident.lessons_learned = resolution_notes\n            \n            # Move to history\n            self.incident_history.append(incident)\n            del self.active_incidents[incident_id]\n            \n            # Keep only last 1000 incidents in history\n            if len(self.incident_history) > 1000:\n                self.incident_history = self.incident_history[-1000:]\n            \n            logger.info(f\"Closed incident {incident_id}\")\n            \n            audit_logger.log_security_event(\n                \"incident_closed\", \"info\",\n                {\"incident_id\": incident_id, \"resolution_notes\": resolution_notes}\n            )\n    \n    def get_incident_statistics(self) -> Dict[str, Any]:\n        \"\"\"Get incident response statistics.\"\"\"\n        active_incidents = list(self.active_incidents.values())\n        \n        stats = {\n            \"active_incidents\": len(active_incidents),\n            \"total_incidents_handled\": len(self.incident_history),\n            \"playbook_rules\": len(self.playbook_rules),\n            \"enabled_rules\": len([r for r in self.playbook_rules.values() if r.enabled]),\n            \"incidents_by_severity\": {},\n            \"incidents_by_status\": {},\n            \"average_response_time_minutes\": 0,\n            \"most_triggered_rules\": [],\n            \"recent_activity\": []\n        }\n        \n        # Count by severity and status\n        for incident in active_incidents:\n            severity = incident.severity.value\n            status = incident.status.value\n            \n            stats[\"incidents_by_severity\"][severity] = stats[\"incidents_by_severity\"].get(severity, 0) + 1\n            stats[\"incidents_by_status\"][status] = stats[\"incidents_by_status\"].get(status, 0) + 1\n        \n        # Calculate average response time from closed incidents\n        closed_incidents = self.incident_history[-100:]  # Last 100 closed incidents\n        if closed_incidents:\n            response_times = []\n            for incident in closed_incidents:\n                if incident.response_actions:\n                    first_response = min(action.executed_at for action in incident.response_actions if action.executed_at)\n                    response_time = (first_response - incident.created_at).total_seconds() / 60\n                    response_times.append(response_time)\n            \n            if response_times:\n                stats[\"average_response_time_minutes\"] = sum(response_times) / len(response_times)\n        \n        return stats\n\n\n# Global instance\nincident_response = IncidentResponseManager()
+import hashlib
+import json
+import time
+from typing import Dict, List, Optional, Any, Set, Callable
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from enum import Enum
+import logging
+
+from ..core.config import config
+from ..monitoring.logging import get_logger, audit_logger
+from .monitoring import SecurityEvent, SecurityEventType, ThreatLevel, security_monitor
+from .auth import auth_manager, User, UserRole
+from .rate_limiting import rate_limiter
+from .threat_intelligence import threat_intelligence, IndicatorType, ThreatType
+
+logger = get_logger(__name__)
+
+
+class IncidentSeverity(Enum):
+    """Incident severity levels."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class IncidentStatus(Enum):
+    """Incident status."""
+    OPEN = "open"
+    INVESTIGATING = "investigating"
+    CONTAINED = "contained"
+    ERADICATED = "eradicated"
+    RECOVERED = "recovered"
+    CLOSED = "closed"
+
+
+class ResponseActionType(Enum):
+    """Types of automated response actions."""
+    BLOCK_IP = "block_ip"
+    DISABLE_USER = "disable_user"
+    REVOKE_TOKENS = "revoke_tokens"
+    RATE_LIMIT = "rate_limit"
+    ALERT_ADMINS = "alert_admins"
+    ISOLATE_SYSTEM = "isolate_system"
+    BACKUP_DATA = "backup_data"
+    PATCH_SYSTEM = "patch_system"
+    COLLECT_EVIDENCE = "collect_evidence"
+    NOTIFY_EXTERNAL = "notify_external"
+
+
+@dataclass
+class ResponseAction:
+    """Automated response action."""
+    action_id: str
+    action_type: ResponseActionType
+    parameters: Dict[str, Any]
+    executed_at: Optional[datetime] = None
+    success: bool = False
+    error_message: Optional[str] = None
+    execution_time_ms: Optional[float] = None
+
+
+@dataclass
+class IncidentTicket:
+    """Security incident ticket."""
+    incident_id: str
+    title: str
+    description: str
+    severity: IncidentSeverity
+    status: IncidentStatus
+    created_at: datetime
+    updated_at: datetime
+    assigned_to: Optional[str] = None
+    source_events: List[str] = field(default_factory=list)
+    affected_systems: List[str] = field(default_factory=list)
+    indicators_of_compromise: List[Dict[str, str]] = field(default_factory=list)
+    response_actions: List[ResponseAction] = field(default_factory=list)
+    timeline: List[Dict[str, Any]] = field(default_factory=list)
+    lessons_learned: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PlaybookRule:
+    """Incident response playbook rule."""
+    rule_id: str
+    name: str
+    description: str
+    event_types: Set[SecurityEventType]
+    threat_levels: Set[ThreatLevel]
+    conditions: Dict[str, Any] = field(default_factory=dict)
+    actions: List[Dict[str, Any]] = field(default_factory=list)
+    cooldown_minutes: int = 60
+    enabled: bool = True
+    priority: int = 1
+
+
+class IncidentResponseManager:
+    """Automated incident response and management system."""
+    
+    def __init__(self):
+        self.active_incidents: Dict[str, IncidentTicket] = {}
+        self.incident_history: List[IncidentTicket] = []
+        self.playbook_rules: Dict[str, PlaybookRule] = {}
+        self.response_actions: Dict[ResponseActionType, Callable] = {}
+        self.rule_execution_history: Dict[str, datetime] = {}  # rule_id -> last_execution
+        
+        # Initialize default playbooks
+        self._initialize_default_playbooks()
+        
+        # Register response actions
+        self._register_response_actions()
+        
+        # Register with security monitor
+        self._register_event_handlers()
+    
+    def _initialize_default_playbooks(self):
+        """Initialize default incident response playbooks."""
+        default_playbooks = [
+            PlaybookRule(
+                rule_id="critical_auth_failure",
+                name="Critical Authentication Failures",
+                description="Respond to critical authentication failures",
+                event_types={SecurityEventType.AUTHENTICATION_FAILURE},
+                threat_levels={ThreatLevel.CRITICAL},
+                conditions={"failed_attempts_threshold": 10},
+                actions=[
+                    {"type": ResponseActionType.BLOCK_IP.value, "params": {"duration_minutes": 60}},
+                    {"type": ResponseActionType.ALERT_ADMINS.value, "params": {"priority": "high"}},
+                    {"type": ResponseActionType.COLLECT_EVIDENCE.value, "params": {}}
+                ],
+                cooldown_minutes=30
+            ),
+            PlaybookRule(
+                rule_id="brute_force_attack",
+                name="Brute Force Attack Response",
+                description="Respond to brute force attacks",
+                event_types={SecurityEventType.BRUTE_FORCE_ATTEMPT},
+                threat_levels={ThreatLevel.HIGH, ThreatLevel.CRITICAL},
+                actions=[
+                    {"type": ResponseActionType.BLOCK_IP.value, "params": {"duration_minutes": 120}},
+                    {"type": ResponseActionType.RATE_LIMIT.value, "params": {"factor": 0.1}},
+                    {"type": ResponseActionType.ALERT_ADMINS.value, "params": {}}
+                ],
+                cooldown_minutes=15
+            ),
+            PlaybookRule(
+                rule_id="data_breach_attempt",
+                name="Data Breach Response",
+                description="Respond to potential data breaches",
+                event_types={SecurityEventType.DATA_BREACH_ATTEMPT},
+                threat_levels={ThreatLevel.HIGH, ThreatLevel.CRITICAL},
+                actions=[
+                    {"type": ResponseActionType.ISOLATE_SYSTEM.value, "params": {}},
+                    {"type": ResponseActionType.BACKUP_DATA.value, "params": {}},
+                    {"type": ResponseActionType.ALERT_ADMINS.value, "params": {"priority": "critical"}},
+                    {"type": ResponseActionType.NOTIFY_EXTERNAL.value, "params": {"authorities": True}}
+                ],
+                cooldown_minutes=5
+            ),
+            PlaybookRule(
+                rule_id="malware_detected",
+                name="Malware Detection Response",
+                description="Respond to malware detection",
+                event_types={SecurityEventType.MALWARE_DETECTED},
+                threat_levels={ThreatLevel.HIGH, ThreatLevel.CRITICAL},
+                actions=[
+                    {"type": ResponseActionType.ISOLATE_SYSTEM.value, "params": {}},
+                    {"type": ResponseActionType.COLLECT_EVIDENCE.value, "params": {"forensics": True}},
+                    {"type": ResponseActionType.PATCH_SYSTEM.value, "params": {}},
+                    {"type": ResponseActionType.ALERT_ADMINS.value, "params": {}}
+                ],
+                cooldown_minutes=10
+            ),
+            PlaybookRule(
+                rule_id="privilege_escalation",
+                name="Privilege Escalation Response",
+                description="Respond to privilege escalation attempts",
+                event_types={SecurityEventType.PRIVILEGE_ESCALATION},
+                threat_levels={ThreatLevel.HIGH, ThreatLevel.CRITICAL},
+                actions=[
+                    {"type": ResponseActionType.DISABLE_USER.value, "params": {"temporary": True}},
+                    {"type": ResponseActionType.REVOKE_TOKENS.value, "params": {}},
+                    {"type": ResponseActionType.ALERT_ADMINS.value, "params": {"priority": "high"}},
+                    {"type": ResponseActionType.COLLECT_EVIDENCE.value, "params": {}}
+                ],
+                cooldown_minutes=5
+            )
+        ]
+        
+        for playbook in default_playbooks:
+            self.playbook_rules[playbook.rule_id] = playbook
+    
+    def _register_response_actions(self):
+        """Register automated response action handlers."""
+        self.response_actions = {
+            ResponseActionType.BLOCK_IP: self._action_block_ip,
+            ResponseActionType.DISABLE_USER: self._action_disable_user,
+            ResponseActionType.REVOKE_TOKENS: self._action_revoke_tokens,
+            ResponseActionType.RATE_LIMIT: self._action_adjust_rate_limit,
+            ResponseActionType.ALERT_ADMINS: self._action_alert_admins,
+            ResponseActionType.ISOLATE_SYSTEM: self._action_isolate_system,
+            ResponseActionType.BACKUP_DATA: self._action_backup_data,
+            ResponseActionType.PATCH_SYSTEM: self._action_patch_system,
+            ResponseActionType.COLLECT_EVIDENCE: self._action_collect_evidence,
+            ResponseActionType.NOTIFY_EXTERNAL: self._action_notify_external
+        }
+    
+    def _register_event_handlers(self):
+        """Register event handlers with security monitor."""
+        for event_type in SecurityEventType:
+            security_monitor.register_event_handler(event_type, self._handle_security_event)
+    
+    async def _handle_security_event(self, event: SecurityEvent):
+        """Handle incoming security event and trigger response if needed."""
+        try:
+            # Find matching playbook rules
+            matching_rules = self._find_matching_rules(event)
+            
+            for rule in matching_rules:
+                # Check cooldown
+                if not self._check_rule_cooldown(rule.rule_id):
+                    continue
+                
+                # Check additional conditions
+                if not await self._check_rule_conditions(rule, event):
+                    continue
+                
+                # Execute automated response
+                await self._execute_playbook(rule, event)
+                
+                # Update rule execution history
+                self.rule_execution_history[rule.rule_id] = datetime.utcnow()
+                
+        except Exception as e:
+            logger.error(f"Error handling security event {event.event_id}: {e}")
+    
+    def _find_matching_rules(self, event: SecurityEvent) -> List[PlaybookRule]:
+        """Find playbook rules that match the security event."""
+        matching_rules = []
+        
+        for rule in self.playbook_rules.values():
+            if not rule.enabled:
+                continue
+            
+            # Check event type
+            if event.event_type not in rule.event_types:
+                continue
+            
+            # Check threat level
+            if event.threat_level not in rule.threat_levels:
+                continue
+            
+            matching_rules.append(rule)
+        
+        # Sort by priority (higher priority first)
+        return sorted(matching_rules, key=lambda r: r.priority, reverse=True)
+    
+    def _check_rule_cooldown(self, rule_id: str) -> bool:
+        """Check if rule is not in cooldown period."""
+        if rule_id not in self.rule_execution_history:
+            return True
+        
+        rule = self.playbook_rules[rule_id]
+        last_execution = self.rule_execution_history[rule_id]
+        cooldown_expires = last_execution + timedelta(minutes=rule.cooldown_minutes)
+        
+        return datetime.utcnow() > cooldown_expires
+    
+    async def _check_rule_conditions(self, rule: PlaybookRule, event: SecurityEvent) -> bool:
+        """Check additional rule conditions."""
+        if not rule.conditions:
+            return True
+        
+        # Check failed attempts threshold
+        if "failed_attempts_threshold" in rule.conditions:
+            threshold = rule.conditions["failed_attempts_threshold"]
+            if event.source_ip:
+                recent_events = security_monitor.get_recent_events(minutes=60)
+                ip_failures = len([
+                    e for e in recent_events
+                    if e.get('source_ip') == event.source_ip and 
+                       e.get('event_type') == SecurityEventType.AUTHENTICATION_FAILURE.value
+                ])
+                if ip_failures < threshold:
+                    return False
+        
+        # Add more condition checks as needed
+        
+        return True
+    
+    async def _execute_playbook(self, rule: PlaybookRule, event: SecurityEvent):
+        """Execute automated response playbook."""
+        logger.info(f"Executing playbook rule: {rule.name} for event {event.event_id}")
+        
+        # Create or update incident
+        incident = await self._create_or_update_incident(rule, event)
+        
+        # Execute response actions
+        for action_config in rule.actions:
+            try:
+                action = await self._execute_response_action(action_config, event, incident)
+                incident.response_actions.append(action)
+                
+                # Add to timeline
+                incident.timeline.append({
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "event": "response_action_executed",
+                    "action_type": action.action_type.value,
+                    "success": action.success,
+                    "details": action.parameters
+                })
+                
+            except Exception as e:
+                logger.error(f"Failed to execute response action {action_config}: {e}")
+        
+        # Update incident
+        incident.updated_at = datetime.utcnow()
+        
+        # Log incident response
+        audit_logger.log_security_event(
+            "incident_response_executed", "info",
+            {
+                "incident_id": incident.incident_id,
+                "rule_name": rule.name,
+                "event_id": event.event_id,
+                "actions_executed": len(incident.response_actions)
+            }
+        )
+    
+    async def _create_or_update_incident(self, rule: PlaybookRule, event: SecurityEvent) -> IncidentTicket:
+        """Create new incident or update existing one."""
+        # Check if there's an existing related incident
+        existing_incident = self._find_related_incident(event)
+        
+        if existing_incident:
+            # Update existing incident
+            existing_incident.source_events.append(event.event_id)
+            existing_incident.updated_at = datetime.utcnow()
+            
+            # Escalate severity if needed
+            if event.threat_level == ThreatLevel.CRITICAL:
+                existing_incident.severity = IncidentSeverity.CRITICAL
+            elif event.threat_level == ThreatLevel.HIGH and existing_incident.severity == IncidentSeverity.MEDIUM:
+                existing_incident.severity = IncidentSeverity.HIGH
+            
+            return existing_incident
+        
+        # Create new incident
+        incident_id = f"INC_{int(time.time())}_{hashlib.md5(event.event_id.encode()).hexdigest()[:8]}"
+        
+        # Map threat level to incident severity
+        severity_mapping = {
+            ThreatLevel.CRITICAL: IncidentSeverity.CRITICAL,
+            ThreatLevel.HIGH: IncidentSeverity.HIGH,
+            ThreatLevel.MEDIUM: IncidentSeverity.MEDIUM,
+            ThreatLevel.LOW: IncidentSeverity.LOW
+        }
+        
+        incident = IncidentTicket(
+            incident_id=incident_id,
+            title=f"Security Incident: {rule.name}",
+            description=f"Automated incident created for {event.event_type.value} event",
+            severity=severity_mapping.get(event.threat_level, IncidentSeverity.MEDIUM),
+            status=IncidentStatus.INVESTIGATING,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            source_events=[event.event_id],
+            affected_systems=[event.endpoint] if event.endpoint else [],
+            timeline=[
+                {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "event": "incident_created",
+                    "details": {"trigger_event": event.event_id, "playbook_rule": rule.name}
+                }
+            ]
+        )
+        
+        # Add indicators of compromise
+        if event.source_ip:
+            incident.indicators_of_compromise.append({
+                "type": "ip",
+                "value": event.source_ip,
+                "source": "event_data"
+            })
+        
+        # Store incident
+        self.active_incidents[incident_id] = incident
+        
+        logger.info(f"Created incident {incident_id} for event {event.event_id}")
+        
+        return incident
+    
+    def _find_related_incident(self, event: SecurityEvent) -> Optional[IncidentTicket]:
+        """Find existing incident related to this event."""
+        # Look for incidents from same IP in last 4 hours
+        if event.source_ip:
+            cutoff_time = datetime.utcnow() - timedelta(hours=4)
+            
+            for incident in self.active_incidents.values():
+                if incident.created_at < cutoff_time:
+                    continue
+                
+                # Check if same IP is in indicators
+                for ioc in incident.indicators_of_compromise:
+                    if ioc.get("type") == "ip" and ioc.get("value") == event.source_ip:
+                        return incident
+        
+        return None
+    
+    async def _execute_response_action(self, action_config: Dict[str, Any], 
+                                     event: SecurityEvent, incident: IncidentTicket) -> ResponseAction:
+        """Execute a single response action."""
+        action_type = ResponseActionType(action_config["type"])
+        parameters = action_config.get("params", {})
+        
+        # Add event and incident context
+        parameters.update({
+            "event_id": event.event_id,
+            "incident_id": incident.incident_id,
+            "source_ip": event.source_ip,
+            "user_id": event.user_id
+        })
+        
+        action = ResponseAction(
+            action_id=f"{action_type.value}_{int(time.time())}_{hashlib.md5(json.dumps(parameters, sort_keys=True).encode()).hexdigest()[:8]}",
+            action_type=action_type,
+            parameters=parameters
+        )
+        
+        start_time = time.time()
+        
+        try:
+            # Execute the action
+            handler = self.response_actions.get(action_type)
+            if handler:
+                await handler(parameters)
+                action.success = True
+            else:
+                raise Exception(f"No handler for action type: {action_type.value}")
+                
+        except Exception as e:
+            action.error_message = str(e)
+            action.success = False
+            logger.error(f"Response action failed: {action_type.value} - {e}")
+        
+        action.executed_at = datetime.utcnow()
+        action.execution_time_ms = (time.time() - start_time) * 1000
+        
+        return action
+    
+    # Response action implementations
+    async def _action_block_ip(self, params: Dict[str, Any]):
+        """Block IP address."""
+        ip = params.get("source_ip")
+        duration_minutes = params.get("duration_minutes", 60)
+        reason = f"Automated block: incident {params.get('incident_id')}"
+        
+        if ip:
+            await rate_limiter.unblock_client(ip)  # First unblock to reset
+            # Then block by adding to security monitor
+            await security_monitor.block_ip(ip, reason)
+            
+            # Also add to threat intelligence
+            threat_intelligence.add_custom_indicator(
+                IndicatorType.IP_ADDRESS,
+                ip,
+                {ThreatType.MALICIOUS_IP},
+                0.8,
+                f"Blocked by incident response: {reason}",
+                {"automated_block", "incident_response"}
+            )
+            
+            logger.info(f"Blocked IP {ip} for {duration_minutes} minutes")
+    
+    async def _action_disable_user(self, params: Dict[str, Any]):
+        """Disable user account."""
+        user_id = params.get("user_id")
+        temporary = params.get("temporary", True)
+        
+        if user_id:
+            user = auth_manager.get_user_by_id(user_id)
+            if user:
+                user.is_active = False
+                if temporary:
+                    user.locked_until = datetime.utcnow() + timedelta(hours=1)
+                
+                logger.info(f"Disabled user {user.username} ({'temporarily' if temporary else 'permanently'})")
+    
+    async def _action_revoke_tokens(self, params: Dict[str, Any]):
+        """Revoke user tokens."""
+        user_id = params.get("user_id")
+        
+        if user_id:
+            auth_manager.revoke_user_tokens(user_id)
+            logger.info(f"Revoked all tokens for user {user_id}")
+    
+    async def _action_adjust_rate_limit(self, params: Dict[str, Any]):
+        """Adjust rate limiting."""
+        ip = params.get("source_ip")
+        factor = params.get("factor", 0.5)  # Reduce by 50%
+        
+        if ip:
+            # This would implement dynamic rate limit adjustment
+            logger.info(f"Adjusted rate limit for {ip} by factor {factor}")
+    
+    async def _action_alert_admins(self, params: Dict[str, Any]):
+        """Alert system administrators."""
+        priority = params.get("priority", "medium")
+        incident_id = params.get("incident_id")
+        
+        # Get admin users
+        admin_users = [user for user in auth_manager.users.values() if user.role == UserRole.ADMIN]
+        
+        alert_message = f"Security incident {incident_id} requires attention (Priority: {priority})"
+        
+        # In a real implementation, this would send notifications via email, Slack, etc.
+        for admin in admin_users:
+            logger.warning(f"ALERT for {admin.username}: {alert_message}")
+        
+        # Log the alert
+        audit_logger.log_security_event(
+            "admin_alert_sent", priority,
+            {"incident_id": incident_id, "recipients": [admin.username for admin in admin_users]}
+        )
+    
+    async def _action_isolate_system(self, params: Dict[str, Any]):
+        """Isolate affected system."""
+        # This would implement system isolation logic
+        logger.critical(f"SYSTEM ISOLATION TRIGGERED: {params}")
+        
+        # In production, this might:
+        # - Disconnect from network
+        # - Stop non-essential services
+        # - Enable emergency mode
+    
+    async def _action_backup_data(self, params: Dict[str, Any]):
+        """Create emergency data backup."""
+        # This would implement emergency backup logic
+        logger.info(f"EMERGENCY BACKUP INITIATED: {params}")
+        
+        # In production, this might:
+        # - Snapshot databases
+        # - Archive critical files
+        # - Store in secure location
+    
+    async def _action_patch_system(self, params: Dict[str, Any]):
+        """Apply security patches."""
+        # This would implement automated patching
+        logger.info(f"AUTOMATED PATCHING INITIATED: {params}")
+        
+        # In production, this might:
+        # - Download security updates
+        # - Apply patches
+        # - Restart services if needed
+    
+    async def _action_collect_evidence(self, params: Dict[str, Any]):
+        """Collect forensic evidence."""
+        forensics = params.get("forensics", False)
+        
+        logger.info(f"EVIDENCE COLLECTION INITIATED (forensics={forensics}): {params}")
+        
+        # In production, this might:
+        # - Capture memory dumps
+        # - Save log files
+        # - Document system state
+        # - Preserve network traffic
+    
+    async def _action_notify_external(self, params: Dict[str, Any]):
+        """Notify external parties."""
+        authorities = params.get("authorities", False)
+        
+        if authorities:
+            logger.critical(f"EXTERNAL NOTIFICATION (AUTHORITIES) TRIGGERED: {params}")
+        else:
+            logger.warning(f"EXTERNAL NOTIFICATION TRIGGERED: {params}")
+        
+        # In production, this might:
+        # - Send notifications to SOC
+        # - Alert law enforcement if required
+        # - Notify business partners
+        # - Update threat intelligence providers
+    
+    def add_playbook_rule(self, rule: PlaybookRule):
+        """Add custom playbook rule."""
+        self.playbook_rules[rule.rule_id] = rule
+        logger.info(f"Added playbook rule: {rule.name}")
+    
+    def remove_playbook_rule(self, rule_id: str) -> bool:
+        """Remove playbook rule."""
+        if rule_id in self.playbook_rules:
+            del self.playbook_rules[rule_id]
+            logger.info(f"Removed playbook rule: {rule_id}")
+            return True
+        return False
+    
+    def get_incident(self, incident_id: str) -> Optional[IncidentTicket]:
+        """Get incident by ID."""
+        return self.active_incidents.get(incident_id)
+    
+    def list_active_incidents(self) -> List[IncidentTicket]:
+        """List all active incidents."""
+        return list(self.active_incidents.values())
+    
+    def close_incident(self, incident_id: str, resolution_notes: str = ""):
+        """Close an incident."""
+        if incident_id in self.active_incidents:
+            incident = self.active_incidents[incident_id]
+            incident.status = IncidentStatus.CLOSED
+            incident.updated_at = datetime.utcnow()
+            incident.lessons_learned = resolution_notes
+            
+            # Move to history
+            self.incident_history.append(incident)
+            del self.active_incidents[incident_id]
+            
+            # Keep only last 1000 incidents in history
+            if len(self.incident_history) > 1000:
+                self.incident_history = self.incident_history[-1000:]
+            
+            logger.info(f"Closed incident {incident_id}")
+            
+            audit_logger.log_security_event(
+                "incident_closed", "info",
+                {"incident_id": incident_id, "resolution_notes": resolution_notes}
+            )
+    
+    def get_incident_statistics(self) -> Dict[str, Any]:
+        """Get incident response statistics."""
+        active_incidents = list(self.active_incidents.values())
+        
+        stats = {
+            "active_incidents": len(active_incidents),
+            "total_incidents_handled": len(self.incident_history),
+            "playbook_rules": len(self.playbook_rules),
+            "enabled_rules": len([r for r in self.playbook_rules.values() if r.enabled]),
+            "incidents_by_severity": {},
+            "incidents_by_status": {},
+            "average_response_time_minutes": 0,
+            "most_triggered_rules": [],
+            "recent_activity": []
+        }
+        
+        # Count by severity and status
+        for incident in active_incidents:
+            severity = incident.severity.value
+            status = incident.status.value
+            
+            stats["incidents_by_severity"][severity] = stats["incidents_by_severity"].get(severity, 0) + 1
+            stats["incidents_by_status"][status] = stats["incidents_by_status"].get(status, 0) + 1
+        
+        # Calculate average response time from closed incidents
+        closed_incidents = self.incident_history[-100:]  # Last 100 closed incidents
+        if closed_incidents:
+            response_times = []
+            for incident in closed_incidents:
+                if incident.response_actions:
+                    first_response = min(action.executed_at for action in incident.response_actions if action.executed_at)
+                    response_time = (first_response - incident.created_at).total_seconds() / 60
+                    response_times.append(response_time)
+            
+            if response_times:
+                stats["average_response_time_minutes"] = sum(response_times) / len(response_times)
+        
+        return stats
+
+
+# Global instance
+incident_response = IncidentResponseManager()
