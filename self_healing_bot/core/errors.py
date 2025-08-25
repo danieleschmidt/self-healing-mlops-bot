@@ -136,7 +136,7 @@ class ErrorHandler:
         """Handle an error and return error information."""
         from datetime import datetime
         from ..monitoring.logging import get_logger, audit_logger
-        from ..monitoring.metrics import metrics
+        from ..monitoring.metrics import metrics_collector as metrics
         
         logger = get_logger(__name__)
         

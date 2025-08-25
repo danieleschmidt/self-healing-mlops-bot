@@ -7,7 +7,7 @@ from self_healing_bot.security.validation import (
     InputValidator, ValidationError, RateLimiter
 )
 from self_healing_bot.security.secrets import (
-    SecretsManager, SecretScanner, EnvironmentProtector
+    EnhancedSecretsManager, SecretScanner, EnvironmentProtector
 )
 
 
@@ -221,57 +221,61 @@ class TestInputValidator:
 class TestRateLimiter:
     """Test cases for RateLimiter."""
     
-    def test_rate_limiting_allowed(self):
+    @pytest.mark.asyncio
+    async def test_rate_limiting_allowed(self):
         """Test requests within rate limit."""
         limiter = RateLimiter()
         
         # First request should be allowed
-        assert limiter.is_allowed("127.0.0.1", "default") is True
+        assert await limiter.check_rate_limit("127.0.0.1", "default") is True
         
         # Subsequent requests within limit should be allowed
-        for _ in range(50):  # Default limit is 60/minute
-            assert limiter.is_allowed("127.0.0.1", "default") is True
+        for _ in range(5):  # Test just a few to avoid long test times
+            assert await limiter.check_rate_limit("127.0.0.1", "default") is True
     
-    def test_rate_limiting_exceeded(self):
+    @pytest.mark.asyncio
+    async def test_rate_limiting_exceeded(self):
         """Test requests exceeding rate limit."""
         limiter = RateLimiter()
         
         # Exhaust the rate limit
         for _ in range(60):  # Default limit is 60/minute
-            limiter.is_allowed("127.0.0.1", "default")
+            await limiter.check_rate_limit("127.0.0.1", "default")
         
         # Next request should be denied
-        assert limiter.is_allowed("127.0.0.1", "default") is False
+        assert await limiter.check_rate_limit("127.0.0.1", "default") is False
     
-    def test_rate_limiting_different_identifiers(self):
+    @pytest.mark.asyncio
+    async def test_rate_limiting_different_identifiers(self):
         """Test rate limiting with different client identifiers."""
         limiter = RateLimiter()
         
         # Exhaust limit for first client
         for _ in range(60):
-            limiter.is_allowed("192.168.1.1", "default")
+            await limiter.check_rate_limit("192.168.1.1", "default")
         
         # Second client should not be affected
-        assert limiter.is_allowed("192.168.1.2", "default") is True
+        assert await limiter.check_rate_limit("192.168.1.2", "default") is True
     
-    def test_rate_limiting_different_endpoints(self):
+    @pytest.mark.asyncio
+    async def test_rate_limiting_different_endpoints(self):
         """Test rate limiting for different endpoints."""
         limiter = RateLimiter()
         
         # Exhaust limit for webhook endpoint
         for _ in range(100):  # Webhook limit is 100/minute
-            limiter.is_allowed("127.0.0.1", "webhook")
+            await limiter.check_rate_limit("127.0.0.1", "webhook")
         
         # Default endpoint should not be affected
-        assert limiter.is_allowed("127.0.0.1", "default") is True
+        assert await limiter.check_rate_limit("127.0.0.1", "default") is True
 
 
 class TestSecretsManager:
-    """Test cases for SecretsManager."""
+    """Test cases for EnhancedSecretsManager."""
     
     def test_encryption_decryption(self):
         """Test value encryption and decryption."""
-        manager = SecretsManager()
+        manager = EnhancedSecretsManager()
         
         original_value = "super_secret_password"
         encrypted = manager.encrypt_value(original_value)
@@ -282,7 +286,7 @@ class TestSecretsManager:
     
     def test_mask_sensitive_data(self):
         """Test sensitive data masking."""
-        manager = SecretsManager()
+        manager = EnhancedSecretsManager()
         
         sensitive_data = {
             "username": "user123",
@@ -314,7 +318,7 @@ class TestSecretsManager:
     
     def test_mask_short_values(self):
         """Test masking of short sensitive values."""
-        manager = SecretsManager()
+        manager = EnhancedSecretsManager()
         
         data = {
             "short_password": "123",

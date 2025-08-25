@@ -10,7 +10,7 @@ from collections import deque
 import json
 
 from ..monitoring.logging import get_logger, performance_logger
-from ..monitoring.metrics import metrics
+from ..monitoring.metrics import metrics_collector as metrics
 from .concurrency import ResourceMonitor
 
 logger = get_logger(__name__)

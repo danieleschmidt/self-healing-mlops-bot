@@ -14,7 +14,7 @@ import structlog
 
 from .core.config import config
 from .monitoring.logging import setup_logging, get_logger
-from .monitoring.metrics import prometheus_metrics
+from .monitoring.metrics import metrics_collector
 
 
 logger = get_logger(__name__)
@@ -187,7 +187,7 @@ class GracefulServer:
                 await app_state["bot"].shutdown()
             
             # Flush metrics
-            if prometheus_metrics:
+            if metrics_collector:
                 logger.info("Flushing metrics")
             
             logger.info("Cleanup completed")
