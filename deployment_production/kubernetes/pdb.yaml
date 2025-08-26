@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: self-healing-mlops-bot
+  namespace: self-healing-mlops-production
+  labels:
+    app: self-healing-mlops-bot
+    environment: production
+spec:
+  minAvailable: 50%
+  selector:
+    matchLabels:
+      app: self-healing-mlops-bot
+      environment: production
+---
