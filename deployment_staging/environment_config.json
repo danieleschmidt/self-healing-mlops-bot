@@ -1,0 +1,17 @@
+{
+  "app_name": "self-healing-mlops-bot",
+  "version": "v1.0.0",
+  "environment": "staging",
+  "auto_scaling": true,
+  "monitoring_enabled": true,
+  "metrics_enabled": true,
+  "health_checks_enabled": true,
+  "graceful_shutdown_timeout": 60,
+  "request_timeout": 30,
+  "worker_processes": 4,
+  "log_level": "INFO",
+  "debug_mode": false,
+  "rate_limiting": true,
+  "ssl_required": true,
+  "backup_enabled": false
+}

@@ -1,0 +1,32 @@
+{
+  "gdpr": {
+    "enabled": true,
+    "data_retention_days": 365,
+    "cookie_consent": true,
+    "data_processing_consent": true,
+    "right_to_be_forgotten": true,
+    "data_portability": true,
+    "privacy_by_design": true
+  },
+  "ccpa": {
+    "enabled": true,
+    "opt_out_enabled": true,
+    "data_disclosure": true,
+    "consumer_rights": true,
+    "data_deletion": true
+  },
+  "pdpa": {
+    "enabled": true,
+    "consent_management": true,
+    "data_localization": true,
+    "cross_border_transfer_restrictions": true
+  },
+  "security": {
+    "encryption_at_rest": true,
+    "encryption_in_transit": true,
+    "access_logging": true,
+    "audit_trail": true,
+    "data_anonymization": true,
+    "secure_by_default": true
+  }
+}
