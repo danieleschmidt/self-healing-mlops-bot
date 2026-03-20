@@ -1,27 +1,13 @@
-"""
-Self-Healing MLOps Bot - Autonomous ML Pipeline Repair and Drift Detection
-
-This package provides a comprehensive framework for monitoring, detecting, and
-automatically repairing issues in ML pipelines and deployments.
-"""
-
-__version__ = "1.0.0"
-__author__ = "Daniel Schmidt"
-__email__ = "daniel@terragonlabs.com"
-
-from .core.bot import SelfHealingBot
-from .core.playbook import Playbook, Action
-from .core.context import Context
-from .detectors.base import BaseDetector
-from .actions.base import BaseAction
-from .integrations.github import GitHubIntegration
+from .detector import detect_failures, has_critical_failures, FailureMatch
+from .repair import generate_repair_suggestions, format_pr_body, RepairSuggestion
+from .app import app
 
 __all__ = [
-    "SelfHealingBot",
-    "Playbook",
-    "Action",
-    "Context",
-    "BaseDetector",
-    "BaseAction",
-    "GitHubIntegration",
+    "app",
+    "detect_failures",
+    "has_critical_failures",
+    "generate_repair_suggestions",
+    "format_pr_body",
+    "FailureMatch",
+    "RepairSuggestion",
 ]
